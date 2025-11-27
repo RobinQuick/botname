@@ -190,7 +190,7 @@ export class DriveThruClient {
             this.audioContext.sampleRate
         );
 
-        audioBuffer.copyToChannel(chunk, 0);
+        audioBuffer.getChannelData(0).set(chunk);
 
         const source = this.audioContext.createBufferSource();
         source.buffer = audioBuffer;
