@@ -2,8 +2,8 @@
 // catalogue-service.ts - Catalogue Management
 // ============================================
 
-import { Product, MenuRule } from './types';
-import { logger } from './logger';
+import { Product, MenuRule } from './types.js';
+import { logger } from './logger.js';
 
 interface CatalogueCache {
     products: Product[];
@@ -254,7 +254,7 @@ export class CatalogueService {
 
         // Synonymes
         product = catalogue.find(p =>
-            p.synonyms.some(s => this.normalizeString(s) === searchName)
+            p.synonyms.some((s: string) => this.normalizeString(s) === searchName)
         );
         if (product) return product;
 
@@ -262,7 +262,7 @@ export class CatalogueService {
         product = catalogue.find(p =>
             this.normalizeString(p.name).includes(searchName) ||
             searchName.includes(this.normalizeString(p.name)) ||
-            p.synonyms.some(s =>
+            p.synonyms.some((s: string) =>
                 this.normalizeString(s).includes(searchName) ||
                 searchName.includes(this.normalizeString(s))
             )

@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { DriveThruScreen } from './OrderDisplay';
+import { DriveThruScreen } from './OrderDisplay.js';
 import './index.css';
 
 const isTestMode = window.location.pathname === '/test';

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { DriveThruClient } from './drive-thru-client';
+import { DriveThruClient } from './drive-thru-client.js';
 
 interface OrderItemDisplay {
     name: string;
@@ -33,11 +33,11 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
         clientRef.current = new DriveThruClient({
             serverUrl: `ws://${window.location.hostname}:3000/drive-thru`,
             testMode,
-            onOrderUpdate: (newOrder) => setOrder(newOrder),
-            onTranscript: (role, text) => {
+            onOrderUpdate: (newOrder: any) => setOrder(newOrder),
+            onTranscript: (role: string, text: string) => {
                 setTranscripts(prev => [...prev, { role: role as 'assistant' | 'user', text }]);
             },
-            onStatusChange: (newStatus) => setStatus(newStatus)
+            onStatusChange: (newStatus: string) => setStatus(newStatus)
         });
 
         clientRef.current.connect();

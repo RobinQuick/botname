@@ -1,14 +1,10 @@
-// ============================================
-// pos-adapter.ts - POS Integration
-// ============================================
-
-import { Order, OrderItem, ValidationError } from './types';
-import { logger } from './logger';
+import { Order, OrderItem, OrderItemModifier } from './types.js';
+import { logger } from './logger.js';
 
 interface POSOrderPayload {
     externalId: string;
     storeId: string;
-    channel: 'drive_thru';
+    channel: string;
     items: POSOrderItem[];
     subtotal: number;
     tax: number;
@@ -48,6 +44,13 @@ interface POSAdapterResult {
     orderNumber?: string;
     estimatedTime?: number;
     error?: ValidationError;
+}
+
+interface ValidationError {
+    code: string;
+    message: string;
+    messageFr: string;
+    recoverable: boolean;
 }
 
 export class POSAdapter {
@@ -256,8 +259,7 @@ export class POSAdapter {
             currency: order.currency,
             metadata: {
                 sessionId: order.sessionId,
-                laneId: order.laneId,
-                source: 'voicebot'
+                laneId: order.laneId
             }
         };
     }
@@ -267,18 +269,14 @@ export class POSAdapter {
             productId: item.productId,
             quantity: item.qty,
             unitPrice: item.unitPrice,
-            modifiers: item.modifiers.map(mod => ({
-                type: mod.type,
-                productId: mod.productId,
-                price: mod.extraPrice
+            modifiers: item.modifiers.map(m => ({
+                type: m.type,
+                productId: m.productId,
+                price: m.extraPrice
             })),
-            notes: item.notes
+            notes: item.customizations?.map(c => c.ingredient).join(', ')
         };
     }
-
-    // ============================================
-    // ERROR HANDLING
-    // ============================================
 
     private translatePOSError(code?: string): string {
         const translations: Record<string, string> = {

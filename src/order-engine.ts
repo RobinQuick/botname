@@ -1,26 +1,18 @@
-// ============================================
-// order-engine.ts - Complete Order Engine
-// ============================================
-
 import { randomUUID } from 'crypto';
 import {
-    Product,
-    ProductSize,
-    MenuRule,
     Order,
     OrderItem,
-    OrderItemModifier,
-    OrderCustomization,
-    ValidationError,
+    Product,
+    MenuRule,
     OrderEngineResult,
+    ValidationError,
     ParsedOrderItem,
     ParsedModifier,
-    OrderModification
-} from './types';
-
-// ============================================
-// CONSTANTS
-// ============================================
+    OrderItemModifier,
+    OrderCustomization,
+    OrderModification,
+    ProductSize
+} from './types.js';
 
 // TVA France - Restauration rapide à emporter
 const TAX_RATE_TAKEAWAY = 0.055;  // 5.5%
@@ -175,7 +167,7 @@ export class OrderEngine {
                 );
 
                 if (!modifierResult.success) {
-                    return modifierResult as OrderEngineResult<Order>;
+                    return modifierResult as unknown as OrderEngineResult<Order>;
                 }
 
                 modifiers.push(...modifierResult.data!.modifiers);
@@ -926,46 +918,10 @@ export class OrderEngine {
                 const mods = item.modifiers.map(m => m.name).join(', ');
                 line += ` avec ${mods}`;
             }
-
-            // Ajouter les sauces pour les autres produits
-            const sauces = item.modifiers.filter(m => m.type === 'sauce');
-            if (item.category !== 'menu' && sauces.length > 0) {
-                line += ` avec sauce ${sauces.map(s => s.name).join(' et ')}`;
-            }
-
-            line += ` à ${this.formatPrice(item.linePrice)}`;
             lines.push(line);
         }
 
-        lines.push(`Total: ${this.formatPrice(order.total)}`);
-
-        return lines.join('. ');
-    }
-
-    /**
-     * Génère un résumé JSON pour l'affichage
-     */
-    generateOrderDisplayData(order: Order): object {
-        return {
-            items: order.items.map(item => ({
-                name: item.name,
-                quantity: item.qty,
-                size: item.size,
-                modifiers: item.modifiers.map(m => ({
-                    type: m.type,
-                    name: m.name,
-                    extraPrice: m.extraPrice > 0 ? this.formatPrice(m.extraPrice) : null
-                })),
-                price: this.formatPrice(item.linePrice)
-            })),
-            subtotal: this.formatPrice(order.subtotal),
-            discounts: order.discounts.map(d => ({
-                description: d.description,
-                amount: `-${this.formatPrice(d.appliedAmount)}`
-            })),
-            total: this.formatPrice(order.total),
-            itemCount: order.items.reduce((sum, item) => sum + item.qty, 0)
-        };
+        return `${lines.join(', ')}. Total ${this.formatPrice(order.total)}.`;
     }
 
     // ============================================
@@ -973,47 +929,13 @@ export class OrderEngine {
     // ============================================
 
     /**
-     * Résout un nom de produit vers un produit du catalogue
+     * Résout un produit par son nom (fuzzy search)
      */
-    private resolveProduct(
-        parsedItem: ParsedOrderItem,
+    resolveProduct(
+        item: { productName: string; quantity: number },
         catalogue: Product[]
     ): Product | null {
-        // Si l'ID est déjà fourni
-        if (parsedItem.productId) {
-            return catalogue.find(p => p.id === parsedItem.productId) || null;
-        }
-
-        const searchName = this.normalizeString(parsedItem.productName);
-
-        // 1. Recherche exacte par nom
-        let product = catalogue.find(p =>
-            this.normalizeString(p.name) === searchName ||
-            this.normalizeString(p.shortName) === searchName
-        );
-
-        if (product) return product;
-
-        // 2. Recherche par synonymes
-        product = catalogue.find(p =>
-            p.synonyms.some(s => this.normalizeString(s) === searchName)
-        );
-
-        if (product) return product;
-
-        // 3. Recherche partielle
-        product = catalogue.find(p =>
-            this.normalizeString(p.name).includes(searchName) ||
-            searchName.includes(this.normalizeString(p.name)) ||
-            p.synonyms.some(s =>
-                this.normalizeString(s).includes(searchName) ||
-                searchName.includes(this.normalizeString(s))
-            )
-        );
-
-        if (product) return product;
-
-        // 4. Recherche fuzzy (Levenshtein)
+        const searchName = this.normalizeString(item.productName);
         const threshold = 0.75;
         let bestMatch: { product: Product; score: number } | null = null;
 
@@ -1278,6 +1200,31 @@ export class OrderEngine {
     private formatPrice(cents: number): string {
         const euros = (cents / 100).toFixed(2).replace('.', ',');
         return `${euros}€`;
+    }
+    // ============================================
+    // DISPLAY HELPERS
+    // ============================================
+
+    generateOrderDisplayData(order: Order): any {
+        return {
+            items: order.items.map(item => ({
+                name: item.name,
+                quantity: item.qty,
+                size: item.size,
+                modifiers: item.modifiers.map(m => ({
+                    name: m.name,
+                    extraPrice: m.extraPrice > 0 ? this.formatPrice(m.extraPrice) : null
+                })),
+                price: this.formatPrice(item.linePrice)
+            })),
+            subtotal: this.formatPrice(order.subtotal),
+            discounts: order.discounts.map(d => ({
+                description: d.description,
+                amount: this.formatPrice(d.appliedAmount)
+            })),
+            total: this.formatPrice(order.total),
+            itemCount: order.items.reduce((sum, item) => sum + item.qty, 0)
+        };
     }
 }
 

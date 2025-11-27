@@ -363,7 +363,7 @@ async function handleFunctionCall(session: SessionState, item: any) {
             orderUpdated = true;
             result = { success: true, message: 'Item added successfully' };
         } else {
-            result = { success: false, message: engineResult.error };
+            result = { success: false, message: engineResult.errors?.[0]?.message || 'Unknown error' };
         }
     } else if (name === 'remove_item') {
         const engineResult = orderEngine.removeItemByName(
@@ -376,7 +376,7 @@ async function handleFunctionCall(session: SessionState, item: any) {
             orderUpdated = true;
             result = { success: true, message: 'Item removed successfully' };
         } else {
-            result = { success: false, message: engineResult.error };
+            result = { success: false, message: engineResult.errors?.[0]?.message || 'Unknown error' };
         }
     } else if (name === 'confirm_order') {
         if (session.testMode) {
