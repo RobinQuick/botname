@@ -29,12 +29,15 @@ export class CatalogueService {
 
     private initializeSampleData() {
         const products: Product[] = [
+            // ============================================
+            // BURGERS - LES ICONIQUES
+            // ============================================
             {
                 id: "giant-burger",
                 name: "Giant",
                 shortName: "Giant",
                 category: "burger",
-                synonyms: ["le giant", "burger giant"],
+                synonyms: ["le giant", "burger giant", "dja-yeunt"],
                 available: true,
                 basePrice: 520,
                 imageUrl: "/images/giant.png"
@@ -53,11 +56,55 @@ export class CatalogueService {
                 ]
             },
             {
+                id: "quickntoast-burger",
+                name: "Quick'N Toast",
+                shortName: "Quick'N Toast",
+                category: "burger",
+                synonyms: ["quickntoast", "quick and toast", "toast"],
+                available: true,
+                basePrice: 550
+            },
+            {
+                id: "quickntoast-menu",
+                name: "Menu Quick'N Toast",
+                shortName: "Menu Quick'N Toast",
+                category: "menu",
+                synonyms: ["menu quickntoast", "menu quick and toast"],
+                available: true,
+                basePrice: 980,
+                sizes: [
+                    { size: "medium", displayName: "Normal", priceModifier: 0 },
+                    { size: "large", displayName: "Maxi", priceModifier: 80 }
+                ]
+            },
+            {
+                id: "long-bacon",
+                name: "Long Bacon",
+                shortName: "Long Bacon",
+                category: "burger",
+                synonyms: ["bacon long"],
+                available: true,
+                basePrice: 580
+            },
+            {
+                id: "long-bacon-menu",
+                name: "Menu Long Bacon",
+                shortName: "Menu Long Bacon",
+                category: "menu",
+                synonyms: ["menu bacon long"],
+                available: true,
+                basePrice: 1010,
+                sizes: [
+                    { size: "medium", displayName: "Normal", priceModifier: 0 },
+                    { size: "large", displayName: "Maxi", priceModifier: 80 }
+                ]
+            },
+            {
                 id: "long-chicken",
                 name: "Long Chicken",
                 shortName: "Long Chicken",
                 category: "burger",
-                synonyms: ["long chicken", "poulet long"],
+                synonyms: ["long chicken", "poulet long", "chicken long"],
                 available: true,
                 basePrice: 550
             },
@@ -75,11 +122,133 @@ export class CatalogueService {
                 ]
             },
             {
+                id: "long-fish",
+                name: "Long Fish",
+                shortName: "Long Fish",
+                category: "burger",
+                synonyms: ["poisson long"],
+                available: true,
+                basePrice: 560
+            },
+            {
+                id: "long-fish-menu",
+                name: "Menu Long Fish",
+                shortName: "Menu Long Fish",
+                category: "menu",
+                synonyms: ["menu long fish", "menu poisson"],
+                available: true,
+                basePrice: 990,
+                sizes: [
+                    { size: "medium", displayName: "Normal", priceModifier: 0 },
+                    { size: "large", displayName: "Maxi", priceModifier: 80 }
+                ]
+            },
+
+            // ============================================
+            // BURGERS - GAMME MAX & SUPRÊME
+            // ============================================
+            {
+                id: "giant-max",
+                name: "Giant Max",
+                shortName: "Giant Max",
+                category: "burger",
+                synonyms: ["giantmax", "max giant"],
+                available: true,
+                basePrice: 680
+            },
+            {
+                id: "giant-max-menu",
+                name: "Menu Giant Max",
+                shortName: "Menu Giant Max",
+                category: "menu",
+                synonyms: ["menu giant max"],
+                available: true,
+                basePrice: 1110,
+                sizes: [
+                    { size: "medium", displayName: "Normal", priceModifier: 0 },
+                    { size: "large", displayName: "Maxi", priceModifier: 80 }
+                ]
+            },
+            {
+                id: "supreme-classiq",
+                name: "Suprême ClassiQ",
+                shortName: "Suprême ClassiQ",
+                category: "burger",
+                synonyms: ["supreme classic", "classiq"],
+                available: true,
+                basePrice: 720
+            },
+            {
+                id: "supreme-classiq-menu",
+                name: "Menu Suprême ClassiQ",
+                shortName: "Menu Suprême ClassiQ",
+                category: "menu",
+                synonyms: ["menu supreme classic"],
+                available: true,
+                basePrice: 1150,
+                sizes: [
+                    { size: "medium", displayName: "Normal", priceModifier: 0 },
+                    { size: "large", displayName: "Maxi", priceModifier: 80 }
+                ]
+            },
+
+            // ============================================
+            // FINGER FOOD
+            // ============================================
+            {
+                id: "chicken-dips-7",
+                name: "Chicken Dips",
+                shortName: "Chicken Dips",
+                category: "burger",
+                synonyms: ["dips", "nuggets"],
+                available: true,
+                basePrice: 480
+            },
+            {
+                id: "chicken-dips-menu",
+                name: "Menu Chicken Dips",
+                shortName: "Menu Dips",
+                category: "menu",
+                synonyms: ["menu dips", "menu nuggets"],
+                available: true,
+                basePrice: 910,
+                sizes: [
+                    { size: "medium", displayName: "Normal", priceModifier: 0 },
+                    { size: "large", displayName: "Maxi", priceModifier: 80 }
+                ]
+            },
+            {
+                id: "chicken-wings-5",
+                name: "Chicken Wings",
+                shortName: "Wings",
+                category: "burger",
+                synonyms: ["wings", "ailes de poulet"],
+                available: true,
+                basePrice: 520
+            },
+            {
+                id: "chicken-wings-menu",
+                name: "Menu Chicken Wings",
+                shortName: "Menu Wings",
+                category: "menu",
+                synonyms: ["menu wings"],
+                available: true,
+                basePrice: 950,
+                sizes: [
+                    { size: "medium", displayName: "Normal", priceModifier: 0 },
+                    { size: "large", displayName: "Maxi", priceModifier: 80 }
+                ]
+            },
+
+            // ============================================
+            // SIDES
+            // ============================================
+            {
                 id: "fries",
                 name: "Frites",
                 shortName: "Frites",
                 category: "side",
-                synonyms: ["frite", "pommes frites"],
+                synonyms: ["frite", "pommes frites", "patate frites"],
                 available: true,
                 basePrice: 280,
                 sizes: [
@@ -93,7 +262,7 @@ export class CatalogueService {
                 name: "Rustiques",
                 shortName: "Rustiques",
                 category: "side",
-                synonyms: ["potatoes", "rustique"],
+                synonyms: ["potatoes", "rustique", "patates"],
                 available: true,
                 basePrice: 320,
                 sizes: [
@@ -101,18 +270,22 @@ export class CatalogueService {
                     { size: "large", displayName: "Grande", priceModifier: 50 }
                 ]
             },
+
+            // ============================================
+            // DRINKS - SODAS
+            // ============================================
             {
                 id: "coca",
                 name: "Coca-Cola",
                 shortName: "Coca",
                 category: "drink",
-                synonyms: ["coca", "coke"],
+                synonyms: ["coca", "coke", "coca cola"],
                 available: true,
                 basePrice: 250,
                 sizes: [
-                    { size: "small", displayName: "Petit", priceModifier: -20 },
-                    { size: "medium", displayName: "Moyen", priceModifier: 0 },
-                    { size: "large", displayName: "Grand", priceModifier: 40 }
+                    { size: "small", displayName: "20cl", priceModifier: -50 },
+                    { size: "medium", displayName: "35cl", priceModifier: 0 },
+                    { size: "large", displayName: "50cl", priceModifier: 50 }
                 ]
             },
             {
@@ -120,32 +293,212 @@ export class CatalogueService {
                 name: "Coca-Cola Zéro",
                 shortName: "Coca Zéro",
                 category: "drink",
-                synonyms: ["coca zéro", "zéro"],
+                synonyms: ["coca zéro", "zéro", "coca zero", "coke zero"],
                 available: true,
                 basePrice: 250,
                 sizes: [
-                    { size: "small", displayName: "Petit", priceModifier: -20 },
-                    { size: "medium", displayName: "Moyen", priceModifier: 0 },
-                    { size: "large", displayName: "Grand", priceModifier: 40 }
+                    { size: "small", displayName: "20cl", priceModifier: -50 },
+                    { size: "medium", displayName: "35cl", priceModifier: 0 },
+                    { size: "large", displayName: "50cl", priceModifier: 50 }
                 ]
             },
             {
-                id: "water",
-                name: "Eau Minérale",
-                shortName: "Eau",
+                id: "fanta",
+                name: "Fanta",
+                shortName: "Fanta",
                 category: "drink",
-                synonyms: ["eau", "bouteille d'eau"],
+                synonyms: ["fanta orange"],
                 available: true,
-                basePrice: 220
+                basePrice: 250,
+                sizes: [
+                    { size: "small", displayName: "20cl", priceModifier: -50 },
+                    { size: "medium", displayName: "35cl", priceModifier: 0 },
+                    { size: "large", displayName: "50cl", priceModifier: 50 }
+                ]
             },
             {
-                id: "sundae",
-                name: "Sundae",
-                shortName: "Sundae",
+                id: "sprite",
+                name: "Sprite",
+                shortName: "Sprite",
+                category: "drink",
+                synonyms: ["sprite"],
+                available: true,
+                basePrice: 250,
+                sizes: [
+                    { size: "small", displayName: "20cl", priceModifier: -50 },
+                    { size: "medium", displayName: "35cl", priceModifier: 0 },
+                    { size: "large", displayName: "50cl", priceModifier: 50 }
+                ]
+            },
+            {
+                id: "ice-tea",
+                name: "FuzeTea Pêche",
+                shortName: "Ice Tea",
+                category: "drink",
+                synonyms: ["fuzetea", "ice tea", "thé glacé"],
+                available: true,
+                basePrice: 270,
+                sizes: [
+                    { size: "medium", displayName: "35cl", priceModifier: 0 },
+                    { size: "large", displayName: "50cl", priceModifier: 50 }
+                ]
+            },
+
+            // ============================================
+            // DRINKS - WATER & JUICE
+            // ============================================
+            {
+                id: "water",
+                name: "Eau Vittel",
+                shortName: "Eau",
+                category: "drink",
+                synonyms: ["eau", "vittel", "eau plate"],
+                available: true,
+                basePrice: 220,
+                sizes: [
+                    { size: "large", displayName: "50cl", priceModifier: 0 }
+                ]
+            },
+            {
+                id: "badoit",
+                name: "Badoit",
+                shortName: "Badoit",
+                category: "drink",
+                synonyms: ["eau gazeuse"],
+                available: true,
+                basePrice: 250,
+                sizes: [
+                    { size: "large", displayName: "50cl", priceModifier: 0 }
+                ]
+            },
+            {
+                id: "juice-apple",
+                name: "Minute Maid Pomme",
+                shortName: "Jus Pomme",
+                category: "drink",
+                synonyms: ["jus de pomme", "jus pomme"],
+                available: true,
+                basePrice: 280
+            },
+
+            // ============================================
+            // SAUCES
+            // ============================================
+            {
+                id: "sauce-giant",
+                name: "Sauce Giant",
+                shortName: "Sauce Giant",
+                category: "sauce",
+                synonyms: [],
+                available: true,
+                basePrice: 50
+            },
+            {
+                id: "sauce-bbq",
+                name: "Sauce Barbecue",
+                shortName: "BBQ",
+                category: "sauce",
+                synonyms: ["barbecue", "bbq"],
+                available: true,
+                basePrice: 50
+            },
+            {
+                id: "sauce-curry",
+                name: "Sauce Curry Mango",
+                shortName: "Curry",
+                category: "sauce",
+                synonyms: ["curry"],
+                available: true,
+                basePrice: 50
+            },
+            {
+                id: "sauce-mayo",
+                name: "Sauce Mayonnaise",
+                shortName: "Mayo",
+                category: "sauce",
+                synonyms: ["mayonnaise", "mayo"],
+                available: true,
+                basePrice: 50
+            },
+            {
+                id: "sauce-ketchup",
+                name: "Ketchup",
+                shortName: "Ketchup",
+                category: "sauce",
+                synonyms: [],
+                available: true,
+                basePrice: 50
+            },
+
+            // ============================================
+            // DESSERTS
+            // ============================================
+            {
+                id: "churros-5",
+                name: "Churros x5",
+                shortName: "Churros",
                 category: "dessert",
-                synonyms: ["glace sundae"],
+                synonyms: ["churros"],
+                available: true,
+                basePrice: 300
+            },
+            {
+                id: "churros-kitkat",
+                name: "Churros KitKat",
+                shortName: "Churros KitKat",
+                category: "dessert",
+                synonyms: ["churros kitkat", "kitkat"],
                 available: true,
                 basePrice: 350
+            },
+            {
+                id: "cookie-choco",
+                name: "Cookie Trio Choco",
+                shortName: "Cookie",
+                category: "dessert",
+                synonyms: ["cookie", "cookies"],
+                available: true,
+                basePrice: 250
+            },
+            {
+                id: "fondant-chocolat",
+                name: "Fondant au Chocolat",
+                shortName: "Fondant",
+                category: "dessert",
+                synonyms: ["fondant"],
+                available: true,
+                basePrice: 300
+            },
+            {
+                id: "donut",
+                name: "Qarré Donut Sucre",
+                shortName: "Donut",
+                category: "dessert",
+                synonyms: ["donut", "beignet"],
+                available: true,
+                basePrice: 280
+            },
+
+            // ============================================
+            // KIDS MENUS
+            // ============================================
+            {
+                id: "magic-box",
+                name: "Magic Box",
+                shortName: "Magic Box",
+                category: "menu",
+                synonyms: ["menu enfant", "menu kids", "magic"],
+                available: true,
+                basePrice: 580
+            },
+            {
+                id: "fun-box",
+                name: "Fun Box",
+                shortName: "Fun Box",
+                category: "menu",
+                synonyms: ["fun box", "menu ado"],
+                available: true,
+                basePrice: 680
             }
         ];
 
