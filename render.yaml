@@ -3,8 +3,8 @@ services:
     name: quick-voicebot
     env: node
     plan: free
-    buildCommand: npm install --production=false && npm run build
-    startCommand: pwd && ls -la && ls -R dist && node dist/server.js
+    buildCommand: bash .render-build.sh
+    startCommand: node dist/server.js
     envVars:
       - key: NODE_VERSION
         value: 22.0.0
