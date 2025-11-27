@@ -31,7 +31,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
 
     useEffect(() => {
         clientRef.current = new DriveThruClient({
-            serverUrl: `ws://${window.location.hostname}:3000/drive-thru`,
+            serverUrl: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/drive-thru`,
             testMode,
             onOrderUpdate: (newOrder: any) => setOrder(newOrder),
             onTranscript: (role: string, text: string) => {
