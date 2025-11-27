@@ -7,6 +7,7 @@ interface OrderItemDisplay {
     size?: string;
     modifiers: { name: string; extraPrice: string | null }[];
     price: string;
+    imageUrl?: string;
 }
 
 interface OrderDisplayData {
@@ -103,11 +104,32 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                             ) : (
                                 order.items.map((item, index) => (
                                     <div key={index} className="glass-card rounded-xl p-4 flex justify-between items-start group">
-                                        <div className="flex gap-4 items-center">
-                                            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm font-bold text-[var(--quick-red)]">
+                                        <div className="flex gap-4 items-center w-full">
+                                            {/* Product Image */}
+                                            <div className="w-20 h-20 rounded-lg bg-white/5 flex-shrink-0 overflow-hidden border border-white/10">
+                                                {item.imageUrl ? (
+                                                    <img
+                                                        src={item.imageUrl}
+                                                        alt={item.name}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => {
+                                                            // Fallback to emoji if image fails to load
+                                                            e.currentTarget.style.display = 'none';
+                                                            e.currentTarget.parentElement!.innerHTML = '<span class="text-4xl flex items-center justify-center w-full h-full">🍔</span>';
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <span className="text-4xl flex items-center justify-center w-full h-full">🍔</span>
+                                                )}
+                                            </div>
+
+                                            {/* Quantity Badge */}
+                                            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm font-bold text-[var(--quick-red)] flex-shrink-0">
                                                 {item.quantity}x
                                             </div>
-                                            <div>
+
+                                            {/* Item Details */}
+                                            <div className="flex-1">
                                                 <h3 className="text-xl font-bold text-white leading-none mb-1">{item.name}</h3>
                                                 {item.size && <p className="text-sm text-white/60 uppercase">{item.size}</p>}
                                                 {item.modifiers && item.modifiers.length > 0 && (
@@ -120,8 +142,10 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                                                     </div>
                                                 )}
                                             </div>
+
+                                            {/* Price */}
+                                            <span className="text-xl font-bold text-white/90 flex-shrink-0">{item.price}</span>
                                         </div>
-                                        <span className="text-xl font-bold text-white/90">{item.price}</span>
                                     </div>
                                 ))
                             )}

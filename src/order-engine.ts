@@ -1207,16 +1207,22 @@ export class OrderEngine {
 
     generateOrderDisplayData(order: Order): any {
         return {
-            items: order.items.map(item => ({
-                name: item.name,
-                quantity: item.qty,
-                size: item.size,
-                modifiers: item.modifiers.map(m => ({
-                    name: m.name,
-                    extraPrice: m.extraPrice > 0 ? this.formatPrice(m.extraPrice) : null
-                })),
-                price: this.formatPrice(item.linePrice)
-            })),
+            items: order.items.map(item => {
+                // Find product in catalog to get imageUrl
+                const product = this.catalogue.products.find(p => p.id === item.productId);
+
+                return {
+                    name: item.name,
+                    quantity: item.qty,
+                    size: item.size,
+                    modifiers: item.modifiers.map(m => ({
+                        name: m.name,
+                        extraPrice: m.extraPrice > 0 ? this.formatPrice(m.extraPrice) : null
+                    })),
+                    price: this.formatPrice(item.linePrice),
+                    imageUrl: product?.imageUrl || undefined
+                };
+            }),
             subtotal: this.formatPrice(order.subtotal),
             discounts: order.discounts.map(d => ({
                 description: d.description,

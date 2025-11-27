@@ -5543,6 +5543,3364 @@ const PREGENERERATED_AUDIO_CACHE: Map<string, AudioBuffer> = new Map();
 
 ---
 
+## 2.4 ORDER ENGINE — IMPLÉMENTATION COMPLÈTE
+
+L'Order Engine est le cœur métier du système. Il gère la construction, validation et calcul des commandes selon les règles Quick.
+
+### 2.4.1 Data Models
+
+```typescript
+// ============================================
+// types.ts - Core Data Models
+// ============================================
+
+// ============================================
+// PRODUCT TYPES
+// ============================================
+
+export type ProductCategory = 
+  | 'menu'           // Menu complet (burger + accomp + boisson)
+  | 'burger'         // Burger seul
+  | 'side'           // Accompagnement (frites, rustiques, etc.)
+  | 'drink'          // Boisson
+  | 'dessert'        // Dessert
+  | 'sauce'          // Sauce
+  | 'extra'          // Supplément
+  | 'kids_menu'      // Menu enfant (Magic Box, Fun Box)
+  | 'finger_food';   // Finger food (chicken dips, wings, etc.)
+
+export type ProductSize = 'small' | 'medium' | 'large' | 'xl';
+
+export type MenuType = 'normal' | 'maxi';
+
+export type KidsMenuType = 'magic_box' | 'fun_box';
+
+export interface Product {
+  id: string;
+  name: string;
+  shortName: string;              // Pour TTS et affichage court
+  category: ProductCategory;
+  
+  // Reconnaissance vocale
+  synonyms: string[];             // Variantes de prononciation
+  
+  // Disponibilité
+  available: boolean;
+  availableFrom?: string;         // Heure début dispo (ex: "11:00")
+  availableTo?: string;           // Heure fin dispo (ex: "23:00")
+  
+  // Prix
+  basePrice: number;              // En centimes
+  sizes?: {
+    size: ProductSize;
+    priceModifier: number;        // Ajout en centimes
+    displayName: string;          // "Petit", "Moyen", "Grand"
+  }[];
+  
+  // Métadonnées
+  calories?: number;
+  allergens?: string[];
+  isAlcohol?: boolean;            // Pour vérification âge
+  isVegetarian?: boolean;
+  isSpicy?: boolean;
+  
+  // Pour les burgers dans menus
+  availableInMenu?: boolean;
+  menuPriceNormal?: number;       // Prix en menu normal
+  menuPriceMaxi?: number;         // Prix en menu maxi
+  
+  // Pour les finger foods
+  portionSizes?: {
+    quantity: number;
+    price: number;
+    displayName: string;          // "x4", "x7", "x20"
+  }[];
+}
+
+// ============================================
+// MENU RULES - LOGIQUE D'ASSOCIATION QUICK
+// ============================================
+
+/**
+ * RÈGLES MENUS QUICK
+ * 
+ * MENUS ADULTES (2 tailles):
+ * - Menu Normal: Burger + Accompagnement Moyen + Boisson 35cl
+ * - Menu Maxi (XL): Burger + Accompagnement Grand + Boisson 50cl
+ * → Si non précisé, TOUJOURS demander: "En menu Normal ou menu Maxi ?"
+ * 
+ * MENUS ENFANTS:
+ * - Magic Box (4-7 ans): Plat + Accomp + Boisson + Dessert + Surprise
+ * - Fun Box (Ados): Plat + Accomp + Boisson + Dessert
+ * → Pour Magic Box, TOUJOURS demander: "Cadeau Fille ou Garçon ?"
+ */
+
+export interface MenuRule {
+  menuType: 'adult_normal' | 'adult_maxi' | 'magic_box' | 'fun_box';
+  displayName: string;
+  displayNameFr: string;
+  
+  // Composants requis
+  components: MenuComponent[];
+  
+  // Prix de base du menu (hors burger)
+  baseMenuSupplement: number;     // Supplément menu vs burger seul
+  fixedPrice?: number;            // Prix fixe (pour menus enfants)
+  
+  // Produits incompatibles
+  excludedProducts?: string[];
+  
+  // Questions à poser
+  requiredQuestions?: string[];   // Ex: "Cadeau Fille ou Garçon ?"
+}
+
+export interface MenuComponent {
+  type: 'main' | 'side' | 'drink' | 'dessert' | 'toy';
+  required: boolean;
+  min: number;
+  max: number;
+  
+  // Produits autorisés pour ce composant
+  allowedProductIds: string[];
+  
+  // Produit par défaut si non spécifié
+  defaultProductId?: string;
+  
+  // Taille par défaut
+  defaultSize?: ProductSize;
+  
+  // Inclus dans le prix ou supplément ?
+  includedInPrice: boolean;
+  
+  // Options de upgrade
+  upgradeOptions?: {
+    productId: string;
+    extraPrice: number;
+    displayName: string;
+  }[];
+}
+
+// ============================================
+// ORDER TYPES
+// ============================================
+
+export interface Order {
+  id: string;
+  sessionId: string;
+  storeId: string;
+  laneId?: string;
+  
+  // Contenu
+  items: OrderItem[];
+  
+  // Calculs
+  subtotal: number;               // Avant taxes
+  tax: number;                    // TVA (5.5% drive = emporter)
+  total: number;                  // TTC
+  currency: 'EUR';
+  
+  // Status
+  status: OrderStatus;
+  
+  // POS
+  posOrderId?: string;
+  
+  // Timing
+  createdAt: Date;
+  updatedAt: Date;
+  confirmedAt?: Date;
+  sentToPosAt?: Date;
+}
+
+export type OrderStatus = 
+  | 'draft'
+  | 'confirmed'
+  | 'sent_to_pos'
+  | 'accepted'
+  | 'rejected'
+  | 'paid'
+  | 'cancelled';
+
+export interface OrderItem {
+  id: string;                     // UUID unique
+  
+  // Produit
+  productId: string;
+  name: string;
+  category: ProductCategory;
+  
+  // Quantité et taille
+  qty: number;
+  size?: ProductSize;
+  
+  // Prix
+  unitPrice: number;              // Prix unitaire en centimes
+  linePrice: number;              // Prix total ligne (unitPrice * qty)
+  
+  // Type de menu (si applicable)
+  menuType?: MenuType | KidsMenuType;
+  
+  // Composants du menu
+  components?: OrderItemComponent[];
+  
+  // Customisations (Phase 2)
+  customizations?: OrderCustomization[];
+  
+  // Sauces associées
+  sauces?: OrderItemSauce[];
+  
+  // Notes spéciales
+  notes?: string;
+}
+
+export interface OrderItemComponent {
+  type: 'main' | 'side' | 'drink' | 'dessert' | 'toy';
+  productId: string;
+  name: string;
+  size?: ProductSize;
+  extraPrice: number;             // 0 si inclus, >0 si upgrade
+}
+
+export interface OrderItemSauce {
+  productId: string;
+  name: string;
+  qty: number;
+  price: number;                  // 0 si gratuite avec menu
+}
+
+export interface OrderCustomization {
+  type: 'remove_ingredient' | 'add_ingredient' | 'extra' | 'less' | 'no_salt';
+  ingredient: string;
+  extraPrice: number;
+}
+
+// ============================================
+// VALIDATION
+// ============================================
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+}
+
+export interface ValidationError {
+  code: string;
+  message: string;
+  messageFr: string;              // Message pour le client
+  field?: string;
+  itemId?: string;
+  recoverable: boolean;
+  suggestion?: string;
+}
+
+export interface ValidationWarning {
+  code: string;
+  message: string;
+  messageFr: string;
+}
+
+// ============================================
+// ORDER ENGINE RESULT
+// ============================================
+
+export interface OrderEngineResult<T> {
+  success: boolean;
+  data?: T;
+  errors?: ValidationError[];
+  warnings?: ValidationWarning[];
+}
+
+// ============================================
+// PARSED INPUT (from NLU)
+// ============================================
+
+export interface ParsedOrderItem {
+  productName: string;            // Nom brut du NLU
+  productId?: string;             // ID si déjà résolu
+  quantity: number;
+  size?: ProductSize;
+  menuType?: MenuType;
+  
+  components?: ParsedComponent[];
+  sauces?: string[];
+  customizations?: ParsedCustomization[];
+}
+
+export interface ParsedComponent {
+  type: 'side' | 'drink' | 'dessert';
+  productName: string;
+  productId?: string;
+  size?: ProductSize;
+}
+
+export interface ParsedCustomization {
+  type: 'remove' | 'add' | 'extra' | 'less';
+  ingredient: string;
+}
+```
+
+### 2.4.2 Catalogue Quick Complet
+
+```typescript
+// ============================================
+// catalogue.ts - Quick Restaurant Catalogue
+// ============================================
+
+import { Product, MenuRule } from './types';
+
+// ============================================
+// BURGERS - GAMME GIANT (Iconique)
+// ============================================
+
+export const BURGERS: Product[] = [
+  {
+    id: 'BURG_GIANT',
+    name: 'Giant',
+    shortName: 'Giant',
+    category: 'burger',
+    synonyms: ['le giant', 'un giant', 'giant classique', 'giant normal', 'le géant', 'geant'],
+    available: true,
+    basePrice: 590,               // 5.90€ seul
+    menuPriceNormal: 890,         // 8.90€ en menu
+    menuPriceMaxi: 1090,          // 10.90€ en menu maxi
+    availableInMenu: true,
+    calories: 503,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde', 'sésame'],
+  },
+  {
+    id: 'BURG_GIANT_MAX',
+    name: 'Giant Max',
+    shortName: 'Giant Max',
+    category: 'burger',
+    synonyms: ['giant max', 'le giant max', 'giant maxi', 'gros giant', 'giant double'],
+    available: true,
+    basePrice: 790,
+    menuPriceNormal: 1090,
+    menuPriceMaxi: 1290,
+    availableInMenu: true,
+    calories: 756,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde', 'sésame'],
+  },
+  {
+    id: 'BURG_GIANT_JR',
+    name: 'Giant Junior',
+    shortName: 'Giant Jr',
+    category: 'burger',
+    synonyms: ['giant junior', 'giant jr', 'petit giant', 'giant enfant', 'giant petit'],
+    available: true,
+    basePrice: 390,
+    availableInMenu: false,       // Uniquement dans Fun Box
+    calories: 320,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde', 'sésame'],
+  },
+  
+  // BURGERS - GAMME LONG (Pains longs)
+  {
+    id: 'BURG_LONG_CHICKEN',
+    name: 'Long Chicken',
+    shortName: 'Long Chicken',
+    category: 'burger',
+    synonyms: ['long chicken', 'long poulet', 'le long chicken', 'sandwich poulet', 'poulet long'],
+    available: true,
+    basePrice: 550,
+    menuPriceNormal: 850,
+    menuPriceMaxi: 1050,
+    availableInMenu: true,
+    calories: 458,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde'],
+  },
+  {
+    id: 'BURG_LONG_FISH',
+    name: 'Long Fish',
+    shortName: 'Long Fish',
+    category: 'burger',
+    synonyms: ['long fish', 'long poisson', 'le long fish', 'sandwich poisson', 'filet de poisson'],
+    available: true,
+    basePrice: 550,
+    menuPriceNormal: 850,
+    menuPriceMaxi: 1050,
+    availableInMenu: true,
+    calories: 445,
+    allergens: ['gluten', 'lait', 'œuf', 'poisson', 'moutarde'],
+  },
+  {
+    id: 'BURG_LONG_BACON',
+    name: 'Long Bacon',
+    shortName: 'Long Bacon',
+    category: 'burger',
+    synonyms: ['long bacon', 'le long bacon', 'sandwich bacon', 'bacon long'],
+    available: true,
+    basePrice: 590,
+    menuPriceNormal: 890,
+    menuPriceMaxi: 1090,
+    availableInMenu: true,
+    calories: 512,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde'],
+  },
+  {
+    id: 'BURG_LONG_BACON_JR',
+    name: 'Long Bacon Junior',
+    shortName: 'Long Bacon Jr',
+    category: 'burger',
+    synonyms: ['long bacon junior', 'long bacon jr', 'petit long bacon'],
+    available: true,
+    basePrice: 390,
+    availableInMenu: false,       // Uniquement dans Fun Box
+    calories: 380,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde'],
+  },
+  
+  // BURGERS - GAMME SUPRÊME (Premium)
+  {
+    id: 'BURG_SUPREME_CLASSIQ',
+    name: 'Suprême ClassiQ',
+    shortName: 'Suprême',
+    category: 'burger',
+    synonyms: ['suprême', 'supreme', 'suprême classiq', 'le suprême', 'double steak', 'classiq'],
+    available: true,
+    basePrice: 690,
+    menuPriceNormal: 990,
+    menuPriceMaxi: 1190,
+    availableInMenu: true,
+    calories: 623,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde', 'sésame'],
+  },
+  {
+    id: 'BURG_SUPREME_CHICKEN',
+    name: 'Suprême Chicken',
+    shortName: 'Suprême Chicken',
+    category: 'burger',
+    synonyms: ['suprême chicken', 'supreme chicken', 'suprême poulet', 'poulet suprême'],
+    available: true,
+    basePrice: 690,
+    menuPriceNormal: 990,
+    menuPriceMaxi: 1190,
+    availableInMenu: true,
+    calories: 589,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde'],
+  },
+  
+  // BURGERS - SPÉCIALITÉS
+  {
+    id: 'BURG_QUICK_TOAST',
+    name: "Quick'N Toast",
+    shortName: 'Quick Toast',
+    category: 'burger',
+    synonyms: ['quick n toast', 'quick toast', 'quicken toast', 'le toast', 'croque'],
+    available: true,
+    basePrice: 650,
+    menuPriceNormal: 950,
+    menuPriceMaxi: 1150,
+    availableInMenu: true,
+    calories: 534,
+    allergens: ['gluten', 'lait', 'œuf'],
+  },
+  {
+    id: 'BURG_CHEESEBURGER',
+    name: 'Cheeseburger',
+    shortName: 'Cheese',
+    category: 'burger',
+    synonyms: ['cheeseburger', 'cheese burger', 'cheese', 'le cheese', 'un cheese'],
+    available: true,
+    basePrice: 290,
+    menuPriceNormal: 590,
+    menuPriceMaxi: 790,
+    availableInMenu: true,
+    calories: 302,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde', 'sésame'],
+  },
+  {
+    id: 'BURG_DOUBLE_CHEESE',
+    name: 'Double Cheese',
+    shortName: 'Double Cheese',
+    category: 'burger',
+    synonyms: ['double cheese', 'double cheeseburger', 'double', 'deux cheese'],
+    available: true,
+    basePrice: 450,
+    menuPriceNormal: 750,
+    menuPriceMaxi: 950,
+    availableInMenu: true,
+    calories: 456,
+    allergens: ['gluten', 'lait', 'œuf', 'moutarde', 'sésame'],
+  },
+  {
+    id: 'BURG_HAMBURGER',
+    name: 'Hamburger',
+    shortName: 'Hamburger',
+    category: 'burger',
+    synonyms: ['hamburger', 'ham burger', 'le hamburger', 'burger simple', 'simple'],
+    available: true,
+    basePrice: 250,
+    menuPriceNormal: 550,
+    menuPriceMaxi: 750,
+    availableInMenu: true,
+    calories: 263,
+    allergens: ['gluten', 'œuf', 'moutarde', 'sésame'],
+  },
+];
+
+// ============================================
+// ACCOMPAGNEMENTS (SIDES)
+// ============================================
+
+export const SIDES: Product[] = [
+  {
+    id: 'SIDE_FRITES',
+    name: 'Frites',
+    shortName: 'Frites',
+    category: 'side',
+    synonyms: ['frites', 'des frites', 'frite', 'patates', 'les frites', 'french fries'],
+    available: true,
+    basePrice: 250,               // Prix moyen par défaut
+    sizes: [
+      { size: 'small', priceModifier: -50, displayName: 'Petite' },
+      { size: 'medium', priceModifier: 0, displayName: 'Moyenne' },
+      { size: 'large', priceModifier: 80, displayName: 'Grande' },
+    ],
+    calories: 340,
+    allergens: [],
+    isVegetarian: true,
+  },
+  {
+    id: 'SIDE_RUSTIQUES',
+    name: 'Rustiques',
+    shortName: 'Rustiques',
+    category: 'side',
+    synonyms: ['rustiques', 'potatoes', 'patates rustiques', 'quartiers', 'les rustiques', 'wedges'],
+    available: true,
+    basePrice: 290,
+    sizes: [
+      { size: 'medium', priceModifier: 0, displayName: 'Moyenne' },
+      { size: 'large', priceModifier: 80, displayName: 'Grande' },
+    ],
+    calories: 380,
+    allergens: [],
+    isVegetarian: true,
+    isSpicy: true,
+  },
+  {
+    id: 'SIDE_TOMATES',
+    name: 'Tomates Cerises',
+    shortName: 'Tomates',
+    category: 'side',
+    synonyms: ['tomates', 'tomates cerises', 'cherry tomatoes', 'tomate'],
+    available: true,
+    basePrice: 150,
+    calories: 25,
+    allergens: [],
+    isVegetarian: true,
+  },
+];
+
+// ============================================
+// FINGER FOOD
+// ============================================
+
+export const FINGER_FOODS: Product[] = [
+  {
+    id: 'FINGER_CHICKEN_DIPS',
+    name: 'Chicken Dips',
+    shortName: 'Chicken Dips',
+    category: 'finger_food',
+    synonyms: ['chicken dips', 'dips', 'nuggets', 'chicken', 'poulet pané', 'beignets de poulet', 'dips poulet'],
+    available: true,
+    basePrice: 350,               // Prix x4 par défaut
+    portionSizes: [
+      { quantity: 4, price: 350, displayName: 'x4' },
+      { quantity: 7, price: 550, displayName: 'x7' },
+      { quantity: 20, price: 1290, displayName: 'x20 (Bucket)' },
+    ],
+    calories: 45,                 // Par pièce
+    allergens: ['gluten', 'œuf'],
+  },
+  {
+    id: 'FINGER_CHICKEN_WINGS',
+    name: 'Chicken Wings',
+    shortName: 'Wings',
+    category: 'finger_food',
+    synonyms: ['chicken wings', 'wings', 'ailes de poulet', 'ailes', 'buffalo wings'],
+    available: true,
+    basePrice: 450,
+    portionSizes: [
+      { quantity: 4, price: 450, displayName: 'x4' },
+      { quantity: 8, price: 790, displayName: 'x8' },
+    ],
+    calories: 85,                 // Par pièce
+    allergens: ['gluten'],
+    isSpicy: true,
+  },
+  {
+    id: 'FINGER_CHEESY_TRIO',
+    name: 'Cheesy Trio',
+    shortName: 'Cheesy Trio',
+    category: 'finger_food',
+    synonyms: ['cheesy trio', 'bouchées fromage', 'cheese bites', 'cheesy', 'trio fromage'],
+    available: true,
+    basePrice: 390,
+    calories: 320,
+    allergens: ['gluten', 'lait'],
+    isVegetarian: true,
+  },
+];
+
+// ============================================
+// BOISSONS (DRINKS)
+// ============================================
+
+export const DRINKS: Product[] = [
+  // Sodas fontaine
+  {
+    id: 'DRINK_COCA',
+    name: 'Coca-Cola',
+    shortName: 'Coca',
+    category: 'drink',
+    synonyms: ['coca', 'coca cola', 'coke', 'coca-cola', 'le coca', 'un coca'],
+    available: true,
+    basePrice: 290,
+    sizes: [
+      { size: 'small', priceModifier: -60, displayName: '25cl' },
+      { size: 'medium', priceModifier: 0, displayName: '35cl' },
+      { size: 'large', priceModifier: 50, displayName: '50cl' },
+    ],
+    calories: 139,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_COCA_ZERO',
+    name: 'Coca-Cola Sans Sucres',
+    shortName: 'Coca Zero',
+    category: 'drink',
+    synonyms: ['coca zero', 'coca sans sucre', 'coke zero', 'coca light', 'zero', 'sans sucre'],
+    available: true,
+    basePrice: 290,
+    sizes: [
+      { size: 'small', priceModifier: -60, displayName: '25cl' },
+      { size: 'medium', priceModifier: 0, displayName: '35cl' },
+      { size: 'large', priceModifier: 50, displayName: '50cl' },
+    ],
+    calories: 1,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_COCA_CHERRY',
+    name: 'Coca-Cola Cherry',
+    shortName: 'Coca Cherry',
+    category: 'drink',
+    synonyms: ['coca cherry', 'cherry coke', 'coca cerise', 'cherry'],
+    available: true,
+    basePrice: 290,
+    sizes: [
+      { size: 'small', priceModifier: -60, displayName: '25cl' },
+      { size: 'medium', priceModifier: 0, displayName: '35cl' },
+      { size: 'large', priceModifier: 50, displayName: '50cl' },
+    ],
+    calories: 142,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_FANTA',
+    name: 'Fanta Orange',
+    shortName: 'Fanta',
+    category: 'drink',
+    synonyms: ['fanta', 'fanta orange', 'orange', 'orangeade'],
+    available: true,
+    basePrice: 290,
+    sizes: [
+      { size: 'small', priceModifier: -60, displayName: '25cl' },
+      { size: 'medium', priceModifier: 0, displayName: '35cl' },
+      { size: 'large', priceModifier: 50, displayName: '50cl' },
+    ],
+    calories: 126,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_SPRITE',
+    name: 'Sprite',
+    shortName: 'Sprite',
+    category: 'drink',
+    synonyms: ['sprite', 'limonade', 'citron', 'lemon'],
+    available: true,
+    basePrice: 290,
+    sizes: [
+      { size: 'small', priceModifier: -60, displayName: '25cl' },
+      { size: 'medium', priceModifier: 0, displayName: '35cl' },
+      { size: 'large', priceModifier: 50, displayName: '50cl' },
+    ],
+    calories: 105,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_FUZE_TEA',
+    name: 'FuzeTea Pêche',
+    shortName: 'FuzeTea',
+    category: 'drink',
+    synonyms: ['fuze tea', 'fuzétea', 'ice tea', 'thé glacé', 'thé pêche', 'peach tea'],
+    available: true,
+    basePrice: 290,
+    sizes: [
+      { size: 'small', priceModifier: -60, displayName: '25cl' },
+      { size: 'medium', priceModifier: 0, displayName: '35cl' },
+      { size: 'large', priceModifier: 50, displayName: '50cl' },
+    ],
+    calories: 84,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_TROPICO',
+    name: 'Tropico',
+    shortName: 'Tropico',
+    category: 'drink',
+    synonyms: ['tropico', 'tropical', 'jus tropical'],
+    available: true,
+    basePrice: 290,
+    sizes: [
+      { size: 'small', priceModifier: -60, displayName: '25cl' },
+      { size: 'medium', priceModifier: 0, displayName: '35cl' },
+      { size: 'large', priceModifier: 50, displayName: '50cl' },
+    ],
+    calories: 118,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_OASIS',
+    name: 'Oasis Tropical',
+    shortName: 'Oasis',
+    category: 'drink',
+    synonyms: ['oasis', 'oasis tropical', 'oasis fruits'],
+    available: true,
+    basePrice: 290,
+    sizes: [
+      { size: 'small', priceModifier: -60, displayName: '25cl' },
+      { size: 'medium', priceModifier: 0, displayName: '35cl' },
+      { size: 'large', priceModifier: 50, displayName: '50cl' },
+    ],
+    calories: 98,
+    allergens: [],
+  },
+  
+  // Eaux
+  {
+    id: 'DRINK_VITTEL',
+    name: 'Vittel',
+    shortName: 'Eau',
+    category: 'drink',
+    synonyms: ['vittel', 'eau', 'eau plate', 'de l\'eau', 'une eau', 'bouteille d\'eau', 'water'],
+    available: true,
+    basePrice: 250,
+    sizes: [
+      { size: 'small', priceModifier: -50, displayName: '33cl' },
+      { size: 'medium', priceModifier: 0, displayName: '50cl' },
+    ],
+    calories: 0,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_SAN_PELLEGRINO',
+    name: 'San Pellegrino',
+    shortName: 'San Pellegrino',
+    category: 'drink',
+    synonyms: ['san pellegrino', 'eau gazeuse', 'pétillante', 'perrier', 'bulles'],
+    available: true,
+    basePrice: 290,
+    calories: 0,
+    allergens: [],
+  },
+  
+  // Jus (pour enfants principalement)
+  {
+    id: 'DRINK_JUS_POMME',
+    name: 'Jus de Pomme Bio',
+    shortName: 'Jus Pomme',
+    category: 'drink',
+    synonyms: ['jus de pomme', 'pomme', 'jus pomme', 'apple juice'],
+    available: true,
+    basePrice: 200,
+    calories: 95,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_JUS_ORANGE',
+    name: 'Jus d\'Orange Bio',
+    shortName: 'Jus Orange',
+    category: 'drink',
+    synonyms: ['jus d\'orange', 'jus orange', 'orange juice'],
+    available: true,
+    basePrice: 200,
+    calories: 90,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_CAPRI_SUN',
+    name: 'Capri-Sun',
+    shortName: 'Capri-Sun',
+    category: 'drink',
+    synonyms: ['capri sun', 'caprisun', 'capri'],
+    available: true,
+    basePrice: 180,
+    calories: 70,
+    allergens: [],
+  },
+  
+  // Bière (vérification âge requise)
+  {
+    id: 'DRINK_KRO',
+    name: 'Kronenbourg 1664',
+    shortName: '1664',
+    category: 'drink',
+    synonyms: ['1664', 'kronenbourg', 'kro', 'bière', 'une bière', 'beer'],
+    available: true,
+    basePrice: 350,
+    calories: 145,
+    allergens: ['gluten'],
+    isAlcohol: true,
+  },
+  
+  // Boissons chaudes
+  {
+    id: 'DRINK_ESPRESSO',
+    name: 'Espresso',
+    shortName: 'Espresso',
+    category: 'drink',
+    synonyms: ['espresso', 'café', 'expresso', 'un café', 'coffee'],
+    available: true,
+    basePrice: 150,
+    calories: 2,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_CAFE_ALLONGE',
+    name: 'Café Allongé',
+    shortName: 'Café Allongé',
+    category: 'drink',
+    synonyms: ['café allongé', 'café long', 'allongé', 'americano'],
+    available: true,
+    basePrice: 180,
+    calories: 4,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_THE',
+    name: 'Thé',
+    shortName: 'Thé',
+    category: 'drink',
+    synonyms: ['thé', 'un thé', 'tea', 'thé chaud'],
+    available: true,
+    basePrice: 180,
+    calories: 0,
+    allergens: [],
+  },
+  {
+    id: 'DRINK_CHOCOLAT',
+    name: 'Chocolat Chaud',
+    shortName: 'Chocolat',
+    category: 'drink',
+    synonyms: ['chocolat chaud', 'chocolat', 'cacao', 'hot chocolate'],
+    available: true,
+    basePrice: 220,
+    calories: 180,
+    allergens: ['lait'],
+  },
+];
+
+// ============================================
+// DESSERTS
+// ============================================
+
+export const DESSERTS: Product[] = [
+  // Mix Mania (Glaces mélangées)
+  {
+    id: 'DESSERT_MIX_LION',
+    name: 'Mix Mania Lion',
+    shortName: 'Mix Lion',
+    category: 'dessert',
+    synonyms: ['mix mania lion', 'mix lion', 'glace lion', 'lion'],
+    available: true,
+    basePrice: 390,
+    calories: 320,
+    allergens: ['gluten', 'lait', 'arachides'],
+  },
+  {
+    id: 'DESSERT_MIX_KITKAT',
+    name: 'Mix Mania KitKat',
+    shortName: 'Mix KitKat',
+    category: 'dessert',
+    synonyms: ['mix mania kitkat', 'mix kitkat', 'glace kitkat', 'kitkat'],
+    available: true,
+    basePrice: 390,
+    calories: 310,
+    allergens: ['gluten', 'lait'],
+  },
+  {
+    id: 'DESSERT_MIX_MMS',
+    name: "Mix Mania M&M's",
+    shortName: "Mix M&M's",
+    category: 'dessert',
+    synonyms: ['mix mania m&m', 'mix m&m', 'glace m&m', 'm and m', 'mms'],
+    available: true,
+    basePrice: 390,
+    calories: 330,
+    allergens: ['lait', 'arachides'],
+  },
+  {
+    id: 'DESSERT_MIX_DAIM',
+    name: 'Mix Mania Daim',
+    shortName: 'Mix Daim',
+    category: 'dessert',
+    synonyms: ['mix mania daim', 'mix daim', 'glace daim', 'daim'],
+    available: true,
+    basePrice: 390,
+    calories: 340,
+    allergens: ['gluten', 'lait', 'amandes'],
+  },
+  {
+    id: 'DESSERT_MIX_SNICKERS',
+    name: 'Mix Mania Snickers',
+    shortName: 'Mix Snickers',
+    category: 'dessert',
+    synonyms: ['mix mania snickers', 'mix snickers', 'glace snickers', 'snickers'],
+    available: true,
+    basePrice: 390,
+    calories: 350,
+    allergens: ['gluten', 'lait', 'arachides'],
+  },
+  
+  // Softy (Glaces italiennes)
+  {
+    id: 'DESSERT_SOFTY_CHOCO',
+    name: 'Softy Chocolat',
+    shortName: 'Softy Choco',
+    category: 'dessert',
+    synonyms: ['softy chocolat', 'softy choco', 'glace italienne chocolat', 'cornet chocolat', 'softy'],
+    available: true,
+    basePrice: 250,
+    sizes: [
+      { size: 'small', priceModifier: -50, displayName: 'Mini' },
+      { size: 'medium', priceModifier: 0, displayName: 'Normal' },
+    ],
+    calories: 180,
+    allergens: ['lait'],
+  },
+  {
+    id: 'DESSERT_SOFTY_CARAMEL',
+    name: 'Softy Caramel',
+    shortName: 'Softy Caramel',
+    category: 'dessert',
+    synonyms: ['softy caramel', 'glace italienne caramel', 'cornet caramel'],
+    available: true,
+    basePrice: 250,
+    sizes: [
+      { size: 'small', priceModifier: -50, displayName: 'Mini' },
+      { size: 'medium', priceModifier: 0, displayName: 'Normal' },
+    ],
+    calories: 175,
+    allergens: ['lait'],
+  },
+  {
+    id: 'DESSERT_SOFTY_FRAISE',
+    name: 'Softy Fraise',
+    shortName: 'Softy Fraise',
+    category: 'dessert',
+    synonyms: ['softy fraise', 'glace italienne fraise', 'cornet fraise'],
+    available: true,
+    basePrice: 250,
+    sizes: [
+      { size: 'small', priceModifier: -50, displayName: 'Mini' },
+      { size: 'medium', priceModifier: 0, displayName: 'Normal' },
+    ],
+    calories: 170,
+    allergens: ['lait'],
+  },
+  
+  // Milkshakes
+  {
+    id: 'DESSERT_MILKSHAKE_VANILLE',
+    name: 'Milkshake Vanille',
+    shortName: 'Milk Vanille',
+    category: 'dessert',
+    synonyms: ['milkshake vanille', 'milk vanille', 'shake vanille', 'milkshake'],
+    available: true,
+    basePrice: 390,
+    calories: 420,
+    allergens: ['lait'],
+  },
+  {
+    id: 'DESSERT_MILKSHAKE_FRAISE',
+    name: 'Milkshake Fraise',
+    shortName: 'Milk Fraise',
+    category: 'dessert',
+    synonyms: ['milkshake fraise', 'milk fraise', 'shake fraise'],
+    available: true,
+    basePrice: 390,
+    calories: 410,
+    allergens: ['lait'],
+  },
+  {
+    id: 'DESSERT_MILKSHAKE_CHOCOLAT',
+    name: 'Milkshake Chocolat',
+    shortName: 'Milk Choco',
+    category: 'dessert',
+    synonyms: ['milkshake chocolat', 'milk chocolat', 'shake chocolat', 'milk choco'],
+    available: true,
+    basePrice: 390,
+    calories: 450,
+    allergens: ['lait'],
+  },
+  {
+    id: 'DESSERT_MILKSHAKE_BANANE',
+    name: 'Milkshake Banane',
+    shortName: 'Milk Banane',
+    category: 'dessert',
+    synonyms: ['milkshake banane', 'milk banane', 'shake banane'],
+    available: true,
+    basePrice: 390,
+    calories: 400,
+    allergens: ['lait'],
+  },
+  
+  // Churros
+  {
+    id: 'DESSERT_CHURROS_5',
+    name: 'Churros x5',
+    shortName: 'Churros x5',
+    category: 'dessert',
+    synonyms: ['churros', '5 churros', 'churros x5', 'des churros'],
+    available: true,
+    basePrice: 350,
+    calories: 350,
+    allergens: ['gluten', 'lait'],
+  },
+  {
+    id: 'DESSERT_CHURROS_10',
+    name: 'Churros x10',
+    shortName: 'Churros x10',
+    category: 'dessert',
+    synonyms: ['10 churros', 'churros x10', 'grosse portion churros', 'beaucoup de churros'],
+    available: true,
+    basePrice: 590,
+    calories: 700,
+    allergens: ['gluten', 'lait'],
+  },
+  
+  // Pâtisseries
+  {
+    id: 'DESSERT_BEIGNET',
+    name: 'Beignet Choco-Noisette',
+    shortName: 'Beignet',
+    category: 'dessert',
+    synonyms: ['beignet', 'beignet chocolat', 'beignet noisette', 'donut'],
+    available: true,
+    basePrice: 250,
+    calories: 280,
+    allergens: ['gluten', 'lait', 'fruits à coque'],
+  },
+  {
+    id: 'DESSERT_MUFFIN',
+    name: 'Muffin Chocolat',
+    shortName: 'Muffin',
+    category: 'dessert',
+    synonyms: ['muffin', 'muffin chocolat', 'muffin choco'],
+    available: true,
+    basePrice: 250,
+    calories: 340,
+    allergens: ['gluten', 'lait', 'œuf'],
+  },
+  {
+    id: 'DESSERT_FONDANT',
+    name: 'Fondant Chocolat',
+    shortName: 'Fondant',
+    category: 'dessert',
+    synonyms: ['fondant', 'fondant chocolat', 'moelleux chocolat', 'coulant'],
+    available: true,
+    basePrice: 290,
+    calories: 380,
+    allergens: ['gluten', 'lait', 'œuf'],
+  },
+  {
+    id: 'DESSERT_DONUT',
+    name: 'Donut',
+    shortName: 'Donut',
+    category: 'dessert',
+    synonyms: ['donut', 'doughnut', 'un donut'],
+    available: true,
+    basePrice: 220,
+    calories: 250,
+    allergens: ['gluten', 'lait', 'œuf'],
+  },
+  
+  // Desserts enfants
+  {
+    id: 'DESSERT_POMPOTES',
+    name: "Pom'Potes",
+    shortName: 'Pom Potes',
+    category: 'dessert',
+    synonyms: ['pom potes', 'pompotes', 'compote', 'gourde'],
+    available: true,
+    basePrice: 150,
+    calories: 70,
+    allergens: [],
+  },
+  {
+    id: 'DESSERT_DANONINO',
+    name: 'Danonino',
+    shortName: 'Danonino',
+    category: 'dessert',
+    synonyms: ['danonino', 'petit suisse', 'yaourt', 'danone'],
+    available: true,
+    basePrice: 150,
+    calories: 85,
+    allergens: ['lait'],
+  },
+  {
+    id: 'DESSERT_GLACE_BATONNET',
+    name: 'Glace Bâtonnet',
+    shortName: 'Glace Bâtonnet',
+    category: 'dessert',
+    synonyms: ['glace bâtonnet', 'glace enfant', 'esquimau', 'bâtonnet'],
+    available: true,
+    basePrice: 180,
+    calories: 120,
+    allergens: ['lait'],
+  },
+];
+
+// ============================================
+// SAUCES (Gratuites avec menus/frites)
+// ============================================
+
+export const SAUCES: Product[] = [
+  {
+    id: 'SAUCE_KETCHUP',
+    name: 'Ketchup',
+    shortName: 'Ketchup',
+    category: 'sauce',
+    synonyms: ['ketchup', 'sauce ketchup', 'sauce tomate'],
+    available: true,
+    basePrice: 0,                 // Gratuit avec menu
+    calories: 20,
+    allergens: [],
+  },
+  {
+    id: 'SAUCE_MAYO',
+    name: 'Mayonnaise',
+    shortName: 'Mayo',
+    category: 'sauce',
+    synonyms: ['mayonnaise', 'mayo', 'sauce mayo'],
+    available: true,
+    basePrice: 0,
+    calories: 90,
+    allergens: ['œuf', 'moutarde'],
+  },
+  {
+    id: 'SAUCE_BBQ',
+    name: 'Sauce Barbecue',
+    shortName: 'BBQ',
+    category: 'sauce',
+    synonyms: ['barbecue', 'bbq', 'sauce barbecue', 'sauce bbq'],
+    available: true,
+    basePrice: 0,
+    calories: 30,
+    allergens: [],
+  },
+  {
+    id: 'SAUCE_CURRY',
+    name: 'Sauce Curry',
+    shortName: 'Curry',
+    category: 'sauce',
+    synonyms: ['curry', 'sauce curry'],
+    available: true,
+    basePrice: 0,
+    calories: 40,
+    allergens: ['moutarde'],
+  },
+  {
+    id: 'SAUCE_MOUTARDE',
+    name: 'Sauce Moutarde',
+    shortName: 'Moutarde',
+    category: 'sauce',
+    synonyms: ['moutarde', 'sauce moutarde', 'mustard'],
+    available: true,
+    basePrice: 0,
+    calories: 25,
+    allergens: ['moutarde'],
+  },
+  {
+    id: 'SAUCE_POMMES_FRITES',
+    name: 'Sauce Pommes-Frites',
+    shortName: 'Sauce Blanche',
+    category: 'sauce',
+    synonyms: ['sauce pommes frites', 'sauce blanche', 'sauce frites', 'sauce pf', 'blanche'],
+    available: true,
+    basePrice: 0,
+    calories: 85,
+    allergens: ['œuf', 'moutarde'],
+  },
+  {
+    id: 'SAUCE_GIANT',
+    name: 'Sauce Giant',
+    shortName: 'Sauce Giant',
+    category: 'sauce',
+    synonyms: ['sauce giant', 'giant sauce', 'sauce du giant'],
+    available: true,
+    basePrice: 0,
+    calories: 75,
+    allergens: ['œuf', 'moutarde'],
+  },
+  {
+    id: 'SAUCE_CHINOISE',
+    name: 'Sauce Chinoise',
+    shortName: 'Chinoise',
+    category: 'sauce',
+    synonyms: ['sauce chinoise', 'chinoise', 'sauce aigre douce', 'aigre douce'],
+    available: true,
+    basePrice: 0,
+    calories: 35,
+    allergens: ['soja'],
+  },
+];
+
+// ============================================
+// TOYS (Pour Magic Box)
+// ============================================
+
+export const TOYS: Product[] = [
+  {
+    id: 'TOY_GIRL',
+    name: 'Jouet Fille',
+    shortName: 'Cadeau Fille',
+    category: 'extra',
+    synonyms: ['fille', 'cadeau fille', 'jouet fille'],
+    available: true,
+    basePrice: 0,
+  },
+  {
+    id: 'TOY_BOY',
+    name: 'Jouet Garçon',
+    shortName: 'Cadeau Garçon',
+    category: 'extra',
+    synonyms: ['garçon', 'cadeau garçon', 'jouet garçon'],
+    available: true,
+    basePrice: 0,
+  },
+];
+
+// ============================================
+// MENU RULES - Règles d'association Quick
+// ============================================
+
+export const MENU_RULES: MenuRule[] = [
+  // ========================================
+  // MENU ADULTE NORMAL
+  // Burger + Accompagnement Moyen + Boisson 35cl
+  // ========================================
+  {
+    menuType: 'adult_normal',
+    displayName: 'Menu Normal',
+    displayNameFr: 'Menu',
+    baseMenuSupplement: 300,      // +3€ par rapport au burger seul
+    components: [
+      {
+        type: 'main',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: BURGERS.filter(b => b.availableInMenu).map(b => b.id),
+        includedInPrice: true,
+      },
+      {
+        type: 'side',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['SIDE_FRITES', 'SIDE_RUSTIQUES'],
+        defaultProductId: 'SIDE_FRITES',
+        defaultSize: 'medium',    // Moyenne
+        includedInPrice: true,
+        upgradeOptions: [
+          { productId: 'SIDE_RUSTIQUES', extraPrice: 40, displayName: 'Rustiques (+0,40€)' },
+        ],
+      },
+      {
+        type: 'drink',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: DRINKS.filter(d => !d.isAlcohol && d.sizes).map(d => d.id),
+        defaultProductId: 'DRINK_COCA',
+        defaultSize: 'medium',    // 35cl
+        includedInPrice: true,
+      },
+    ],
+    requiredQuestions: [],
+  },
+  
+  // ========================================
+  // MENU ADULTE MAXI (XL)
+  // Burger + Accompagnement Grand + Boisson 50cl
+  // ========================================
+  {
+    menuType: 'adult_maxi',
+    displayName: 'Menu Maxi',
+    displayNameFr: 'Menu Maxi',
+    baseMenuSupplement: 500,      // +5€ par rapport au burger seul
+    components: [
+      {
+        type: 'main',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: BURGERS.filter(b => b.availableInMenu).map(b => b.id),
+        includedInPrice: true,
+      },
+      {
+        type: 'side',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['SIDE_FRITES', 'SIDE_RUSTIQUES'],
+        defaultProductId: 'SIDE_FRITES',
+        defaultSize: 'large',     // Grande
+        includedInPrice: true,
+        upgradeOptions: [
+          { productId: 'SIDE_RUSTIQUES', extraPrice: 40, displayName: 'Rustiques (+0,40€)' },
+        ],
+      },
+      {
+        type: 'drink',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: DRINKS.filter(d => !d.isAlcohol && d.sizes).map(d => d.id),
+        defaultProductId: 'DRINK_COCA',
+        defaultSize: 'large',     // 50cl
+        includedInPrice: true,
+      },
+    ],
+    requiredQuestions: [],
+  },
+  
+  // ========================================
+  // MAGIC BOX (4-7 ans)
+  // Plat + Accomp + Boisson + Dessert + Surprise
+  // Prix fixe: 6.50€
+  // ========================================
+  {
+    menuType: 'magic_box',
+    displayName: 'Magic Box',
+    displayNameFr: 'Magic Box',
+    baseMenuSupplement: 0,
+    fixedPrice: 650,              // 6.50€ prix fixe
+    components: [
+      {
+        type: 'main',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['BURG_HAMBURGER', 'BURG_CHEESEBURGER', 'FINGER_CHICKEN_DIPS'],
+        defaultProductId: 'BURG_CHEESEBURGER',
+        includedInPrice: true,
+      },
+      {
+        type: 'side',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['SIDE_FRITES', 'SIDE_TOMATES'],
+        defaultProductId: 'SIDE_FRITES',
+        defaultSize: 'small',     // Petite
+        includedInPrice: true,
+      },
+      {
+        type: 'drink',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['DRINK_VITTEL', 'DRINK_JUS_POMME', 'DRINK_JUS_ORANGE', 'DRINK_CAPRI_SUN'],
+        defaultProductId: 'DRINK_VITTEL',
+        includedInPrice: true,
+      },
+      {
+        type: 'dessert',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['DESSERT_POMPOTES', 'DESSERT_DANONINO', 'DESSERT_GLACE_BATONNET'],
+        defaultProductId: 'DESSERT_POMPOTES',
+        includedInPrice: true,
+      },
+      {
+        type: 'toy',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['TOY_GIRL', 'TOY_BOY'],
+        includedInPrice: true,
+      },
+    ],
+    // IMPORTANT: Toujours demander le choix du cadeau
+    requiredQuestions: ['Cadeau Fille ou Garçon ?'],
+  },
+  
+  // ========================================
+  // FUN BOX (Ados/Grands enfants)
+  // Plat + Accomp + Boisson + Dessert
+  // Prix fixe: 7.90€
+  // ========================================
+  {
+    menuType: 'fun_box',
+    displayName: 'Fun Box',
+    displayNameFr: 'Fun Box',
+    baseMenuSupplement: 0,
+    fixedPrice: 790,              // 7.90€ prix fixe
+    components: [
+      {
+        type: 'main',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['BURG_GIANT_JR', 'BURG_LONG_BACON_JR', 'BURG_CHEESEBURGER', 'FINGER_CHICKEN_DIPS'],
+        defaultProductId: 'BURG_GIANT_JR',
+        includedInPrice: true,
+      },
+      {
+        type: 'side',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['SIDE_FRITES', 'SIDE_RUSTIQUES'],
+        defaultProductId: 'SIDE_FRITES',
+        defaultSize: 'medium',    // Moyenne
+        includedInPrice: true,
+      },
+      {
+        type: 'drink',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: DRINKS.filter(d => !d.isAlcohol).map(d => d.id),
+        defaultProductId: 'DRINK_COCA',
+        defaultSize: 'small',     // 25cl
+        includedInPrice: true,
+      },
+      {
+        type: 'dessert',
+        required: true,
+        min: 1,
+        max: 1,
+        allowedProductIds: ['DESSERT_SOFTY_CHOCO', 'DESSERT_SOFTY_CARAMEL', 'DESSERT_SOFTY_FRAISE'],
+        defaultProductId: 'DESSERT_SOFTY_CHOCO',
+        defaultSize: 'small',     // Mini
+        includedInPrice: true,
+      },
+    ],
+    requiredQuestions: [],
+  },
+];
+
+// ============================================
+// PRIX FIXES MENUS ENFANTS
+// ============================================
+
+export const KIDS_MENU_PRICES = {
+  magic_box: 650,                 // 6.50€
+  fun_box: 790,                   // 7.90€
+};
+
+// ============================================
+// FULL CATALOGUE
+// ============================================
+
+export const FULL_CATALOGUE: Product[] = [
+  ...BURGERS,
+  ...SIDES,
+  ...FINGER_FOODS,
+  ...DRINKS,
+  ...DESSERTS,
+  ...SAUCES,
+  ...TOYS,
+];
+
+// ============================================
+// CATALOGUE SERVICE
+// ============================================
+
+export class CatalogueService {
+  private catalogue: Map<string, Product>;
+  private synonymIndex: Map<string, string>;     // synonym → productId
+  private menuRules: MenuRule[];
+  
+  constructor() {
+    this.catalogue = new Map();
+    this.synonymIndex = new Map();
+    this.menuRules = MENU_RULES;
+    
+    // Index products
+    for (const product of FULL_CATALOGUE) {
+      this.catalogue.set(product.id, product);
+      
+      // Index synonyms
+      for (const synonym of product.synonyms) {
+        this.synonymIndex.set(synonym.toLowerCase(), product.id);
+      }
+      // Also index the name itself
+      this.synonymIndex.set(product.name.toLowerCase(), product.id);
+      this.synonymIndex.set(product.shortName.toLowerCase(), product.id);
+    }
+  }
+  
+  getCatalogue(storeId: string): Product[] {
+    // Could filter by store availability
+    return Array.from(this.catalogue.values());
+  }
+  
+  getProduct(productId: string): Product | undefined {
+    return this.catalogue.get(productId);
+  }
+  
+  getMenuRules(storeId: string): MenuRule[] {
+    return this.menuRules;
+  }
+  
+  /**
+   * Resolve a product name (from NLU) to a Product
+   * Uses fuzzy matching if exact match not found
+   */
+  resolveProduct(name: string, storeId: string): Product | undefined {
+    const normalized = name.toLowerCase().trim();
+    
+    // Exact match on synonym
+    const exactMatch = this.synonymIndex.get(normalized);
+    if (exactMatch) {
+      return this.catalogue.get(exactMatch);
+    }
+    
+    // Fuzzy match using Jaro-Winkler
+    let bestMatch: { productId: string; score: number } | null = null;
+    
+    for (const [synonym, productId] of this.synonymIndex.entries()) {
+      const score = this.jaroWinkler(normalized, synonym);
+      if (score > 0.85 && (!bestMatch || score > bestMatch.score)) {
+        bestMatch = { productId, score };
+      }
+    }
+    
+    if (bestMatch) {
+      return this.catalogue.get(bestMatch.productId);
+    }
+    
+    return undefined;
+  }
+  
+  /**
+   * Find alternatives for an unavailable product
+   */
+  findAlternatives(productId: string, storeId: string): Product[] {
+    const product = this.catalogue.get(productId);
+    if (!product) return [];
+    
+    return Array.from(this.catalogue.values())
+      .filter(p => 
+        p.category === product.category && 
+        p.id !== productId && 
+        p.available
+      )
+      .slice(0, 3);
+  }
+  
+  /**
+   * Check real-time availability
+   */
+  async checkRealTimeAvailability(productId: string, storeId: string): Promise<boolean> {
+    const product = this.catalogue.get(productId);
+    if (!product) return false;
+    return product.available;
+  }
+  
+  /**
+   * Jaro-Winkler similarity algorithm
+   */
+  private jaroWinkler(s1: string, s2: string): number {
+    if (s1 === s2) return 1;
+    if (s1.length === 0 || s2.length === 0) return 0;
+    
+    const matchWindow = Math.floor(Math.max(s1.length, s2.length) / 2) - 1;
+    const s1Matches = new Array(s1.length).fill(false);
+    const s2Matches = new Array(s2.length).fill(false);
+    
+    let matches = 0;
+    let transpositions = 0;
+    
+    for (let i = 0; i < s1.length; i++) {
+      const start = Math.max(0, i - matchWindow);
+      const end = Math.min(i + matchWindow + 1, s2.length);
+      
+      for (let j = start; j < end; j++) {
+        if (s2Matches[j] || s1[i] !== s2[j]) continue;
+        s1Matches[i] = true;
+        s2Matches[j] = true;
+        matches++;
+        break;
+      }
+    }
+    
+    if (matches === 0) return 0;
+    
+    let k = 0;
+    for (let i = 0; i < s1.length; i++) {
+      if (!s1Matches[i]) continue;
+      while (!s2Matches[k]) k++;
+      if (s1[i] !== s2[k]) transpositions++;
+      k++;
+    }
+    
+    const jaro = (matches / s1.length + matches / s2.length + (matches - transpositions / 2) / matches) / 3;
+    
+    // Winkler prefix bonus
+    let prefix = 0;
+    for (let i = 0; i < Math.min(4, Math.min(s1.length, s2.length)); i++) {
+      if (s1[i] === s2[i]) prefix++;
+      else break;
+    }
+    
+    return jaro + prefix * 0.1 * (1 - jaro);
+  }
+}
+```
+
+### 2.4.3 Order Engine — Implémentation Complète
+
+```typescript
+// ============================================
+// order-engine.ts - Pure Business Logic
+// ============================================
+
+import { randomUUID } from 'crypto';
+import {
+  Order, OrderItem, OrderItemComponent, Product, MenuRule,
+  ParsedOrderItem, ValidationResult, ValidationError, ValidationWarning,
+  OrderEngineResult, ProductSize, MenuType
+} from './types';
+import { CatalogueService, KIDS_MENU_PRICES, MENU_RULES } from './catalogue';
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+const TVA_RATE = 0.055;           // 5.5% TVA emporter (drive-thru)
+const MAX_QUANTITY_PER_ITEM = 10;
+const MAX_ITEMS_PER_ORDER = 20;
+const MAX_SAUCES_FREE = 3;        // Sauces gratuites par menu
+
+// ============================================
+// ORDER ENGINE
+// ============================================
+
+export class OrderEngine {
+  
+  /**
+   * Create an empty order
+   */
+  createEmptyOrder(sessionId: string, storeId: string): Order {
+    return {
+      id: randomUUID(),
+      sessionId,
+      storeId,
+      items: [],
+      subtotal: 0,
+      tax: 0,
+      total: 0,
+      currency: 'EUR',
+      status: 'draft',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  }
+  
+  /**
+   * Add an item to the order
+   */
+  addItemToOrder(
+    currentOrder: Order,
+    parsedItem: ParsedOrderItem,
+    catalogue: Product[],
+    menuRules: MenuRule[]
+  ): OrderEngineResult<Order> {
+    const errors: ValidationError[] = [];
+    const warnings: ValidationWarning[] = [];
+    
+    // 1. Find the product
+    const product = this.findProduct(parsedItem, catalogue);
+    
+    if (!product) {
+      return {
+        success: false,
+        errors: [{
+          code: 'PRODUCT_NOT_FOUND',
+          message: `Product "${parsedItem.productName}" not found`,
+          messageFr: `Désolé, "${parsedItem.productName}" n'existe pas dans notre menu.`,
+          recoverable: false,
+        }]
+      };
+    }
+    
+    // 2. Check availability
+    if (!product.available) {
+      const alternatives = catalogue
+        .filter(p => p.category === product.category && p.available)
+        .slice(0, 3)
+        .map(p => p.name);
+      
+      return {
+        success: false,
+        errors: [{
+          code: 'PRODUCT_UNAVAILABLE',
+          message: `${product.name} is not available`,
+          messageFr: `Désolé, ${product.name} n'est plus disponible.`,
+          recoverable: true,
+          suggestion: alternatives.length > 0 
+            ? `Puis-je vous proposer ${alternatives.join(' ou ')} ?`
+            : undefined,
+        }]
+      };
+    }
+    
+    // 3. Validate and cap quantity
+    const quantity = Math.min(Math.max(1, parsedItem.quantity), MAX_QUANTITY_PER_ITEM);
+    if (parsedItem.quantity > MAX_QUANTITY_PER_ITEM) {
+      warnings.push({
+        code: 'QUANTITY_ADJUSTED',
+        message: `Quantity capped at ${MAX_QUANTITY_PER_ITEM}`,
+        messageFr: `La quantité a été limitée à ${MAX_QUANTITY_PER_ITEM} maximum.`,
+      });
+    }
+    
+    // 4. Check max items
+    if (currentOrder.items.length >= MAX_ITEMS_PER_ORDER) {
+      return {
+        success: false,
+        errors: [{
+          code: 'MAX_ITEMS_REACHED',
+          message: 'Maximum items per order reached',
+          messageFr: 'La commande a atteint le nombre maximum d\'articles.',
+          recoverable: false,
+        }]
+      };
+    }
+    
+    // 5. Build order item based on type
+    let orderItem: OrderItem;
+    
+    if (product.category === 'burger' && parsedItem.menuType) {
+      // Menu adulte
+      const result = this.buildMenuOrderItem(product, parsedItem, quantity, catalogue, menuRules);
+      if (!result.success) return result;
+      orderItem = result.data!;
+      if (result.warnings) warnings.push(...result.warnings);
+      
+    } else if (product.category === 'finger_food' && product.portionSizes) {
+      // Finger food avec portions
+      orderItem = this.buildFingerFoodOrderItem(product, parsedItem, quantity);
+      
+    } else {
+      // Produit standard
+      orderItem = this.buildStandardOrderItem(product, parsedItem, quantity);
+    }
+    
+    // 6. Create updated order
+    const newItems = [...currentOrder.items, orderItem];
+    const totals = this.calculateTotals(newItems);
+    
+    return {
+      success: true,
+      data: {
+        ...currentOrder,
+        items: newItems,
+        ...totals,
+        updatedAt: new Date(),
+      },
+      warnings: warnings.length > 0 ? warnings : undefined,
+    };
+  }
+  
+  /**
+   * Find product by name or ID
+   */
+  private findProduct(parsedItem: ParsedOrderItem, catalogue: Product[]): Product | undefined {
+    // Try by ID first
+    if (parsedItem.productId) {
+      const byId = catalogue.find(p => p.id === parsedItem.productId);
+      if (byId) return byId;
+    }
+    
+    // Try by exact name
+    const byName = catalogue.find(p => 
+      p.name.toLowerCase() === parsedItem.productName.toLowerCase()
+    );
+    if (byName) return byName;
+    
+    // Try by synonym
+    const bySynonym = catalogue.find(p => 
+      p.synonyms.some(s => s.toLowerCase() === parsedItem.productName.toLowerCase())
+    );
+    if (bySynonym) return bySynonym;
+    
+    // Try partial match
+    const byPartial = catalogue.find(p => 
+      p.name.toLowerCase().includes(parsedItem.productName.toLowerCase()) ||
+      p.synonyms.some(s => s.toLowerCase().includes(parsedItem.productName.toLowerCase()))
+    );
+    
+    return byPartial;
+  }
+  
+  /**
+   * Build a menu order item
+   */
+  private buildMenuOrderItem(
+    burger: Product,
+    parsedItem: ParsedOrderItem,
+    quantity: number,
+    catalogue: Product[],
+    menuRules: MenuRule[]
+  ): OrderEngineResult<OrderItem> {
+    const menuType = parsedItem.menuType || 'normal';
+    const menuRuleType = menuType === 'maxi' ? 'adult_maxi' : 'adult_normal';
+    const menuRule = menuRules.find(r => r.menuType === menuRuleType);
+    
+    if (!menuRule) {
+      return {
+        success: false,
+        errors: [{
+          code: 'MENU_RULE_NOT_FOUND',
+          message: 'Menu configuration not found',
+          messageFr: 'Configuration de menu introuvable.',
+          recoverable: false,
+        }]
+      };
+    }
+    
+    // Get menu price
+    const menuPrice = menuType === 'maxi' ? burger.menuPriceMaxi : burger.menuPriceNormal;
+    
+    if (!menuPrice) {
+      return {
+        success: false,
+        errors: [{
+          code: 'BURGER_NOT_IN_MENU',
+          message: `${burger.name} not available as menu`,
+          messageFr: `${burger.name} n'est pas disponible en menu.`,
+          recoverable: true,
+        }]
+      };
+    }
+    
+    // Build components
+    const components: OrderItemComponent[] = [];
+    let totalExtraPrice = 0;
+    
+    // Side component
+    const sideResult = this.buildMenuComponent('side', parsedItem, menuRule, catalogue);
+    if (sideResult.component) {
+      components.push(sideResult.component);
+      totalExtraPrice += sideResult.component.extraPrice;
+    }
+    
+    // Drink component
+    const drinkResult = this.buildMenuComponent('drink', parsedItem, menuRule, catalogue);
+    if (drinkResult.component) {
+      components.push(drinkResult.component);
+      totalExtraPrice += drinkResult.component.extraPrice;
+    }
+    
+    const unitPrice = menuPrice + totalExtraPrice;
+    
+    return {
+      success: true,
+      data: {
+        id: randomUUID(),
+        productId: burger.id,
+        name: `Menu ${burger.name}${menuType === 'maxi' ? ' Maxi' : ''}`,
+        category: 'menu',
+        qty: quantity,
+        menuType: menuType as MenuType,
+        unitPrice,
+        linePrice: unitPrice * quantity,
+        components,
+        sauces: [],
+      }
+    };
+  }
+  
+  /**
+   * Build a menu component (side or drink)
+   */
+  private buildMenuComponent(
+    type: 'side' | 'drink' | 'dessert',
+    parsedItem: ParsedOrderItem,
+    menuRule: MenuRule,
+    catalogue: Product[]
+  ): { component: OrderItemComponent | null } {
+    const componentRule = menuRule.components.find(c => c.type === type);
+    if (!componentRule) return { component: null };
+    
+    const parsed = parsedItem.components?.find(c => c.type === type);
+    let product: Product | undefined;
+    let size = componentRule.defaultSize;
+    let extraPrice = 0;
+    
+    if (parsed) {
+      // Find requested product
+      product = catalogue.find(p => 
+        componentRule.allowedProductIds.includes(p.id) &&
+        (p.id === parsed.productId || 
+         p.name.toLowerCase().includes(parsed.productName.toLowerCase()) ||
+         p.synonyms.some(s => s.toLowerCase().includes(parsed.productName.toLowerCase())))
+      );
+      if (parsed.size) size = parsed.size;
+    }
+    
+    // Use default if not found
+    if (!product && componentRule.defaultProductId) {
+      product = catalogue.find(p => p.id === componentRule.defaultProductId);
+    }
+    
+    if (!product) return { component: null };
+    
+    // Check for upgrade price
+    const upgrade = componentRule.upgradeOptions?.find(u => u.productId === product!.id);
+    if (upgrade) {
+      extraPrice = upgrade.extraPrice;
+    }
+    
+    return {
+      component: {
+        type,
+        productId: product.id,
+        name: product.name,
+        size,
+        extraPrice,
+      }
+    };
+  }
+  
+  /**
+   * Build a finger food order item
+   */
+  private buildFingerFoodOrderItem(
+    product: Product,
+    parsedItem: ParsedOrderItem,
+    quantity: number
+  ): OrderItem {
+    const portion = product.portionSizes?.[0];
+    const unitPrice = portion?.price || product.basePrice;
+    const portionName = portion?.displayName || '';
+    
+    return {
+      id: randomUUID(),
+      productId: product.id,
+      name: `${product.name} ${portionName}`.trim(),
+      category: product.category,
+      qty: quantity,
+      unitPrice,
+      linePrice: unitPrice * quantity,
+    };
+  }
+  
+  /**
+   * Build a standard order item
+   */
+  private buildStandardOrderItem(
+    product: Product,
+    parsedItem: ParsedOrderItem,
+    quantity: number
+  ): OrderItem {
+    let unitPrice = product.basePrice;
+    const size = parsedItem.size;
+    
+    // Apply size modifier
+    if (size && product.sizes) {
+      const sizeConfig = product.sizes.find(s => s.size === size);
+      if (sizeConfig) {
+        unitPrice += sizeConfig.priceModifier;
+      }
+    }
+    
+    return {
+      id: randomUUID(),
+      productId: product.id,
+      name: product.name,
+      category: product.category,
+      qty: quantity,
+      size,
+      unitPrice,
+      linePrice: unitPrice * quantity,
+    };
+  }
+  
+  /**
+   * Remove an item from the order
+   */
+  removeItemFromOrder(currentOrder: Order, itemIndex: number): OrderEngineResult<Order> {
+    if (itemIndex < 0 || itemIndex >= currentOrder.items.length) {
+      return {
+        success: false,
+        errors: [{
+          code: 'ITEM_NOT_FOUND',
+          message: 'Item not found',
+          messageFr: 'Article non trouvé dans la commande.',
+          recoverable: false,
+        }]
+      };
+    }
+    
+    const newItems = [
+      ...currentOrder.items.slice(0, itemIndex),
+      ...currentOrder.items.slice(itemIndex + 1)
+    ];
+    
+    return {
+      success: true,
+      data: {
+        ...currentOrder,
+        items: newItems,
+        ...this.calculateTotals(newItems),
+        updatedAt: new Date(),
+      }
+    };
+  }
+  
+  /**
+   * Validate order before sending to POS
+   */
+  validateOrder(
+    order: Order,
+    catalogue: Product[],
+    menuRules: MenuRule[]
+  ): OrderEngineResult<ValidationResult> {
+    const errors: ValidationError[] = [];
+    const warnings: ValidationWarning[] = [];
+    
+    // Empty order
+    if (order.items.length === 0) {
+      errors.push({
+        code: 'EMPTY_ORDER',
+        message: 'Order is empty',
+        messageFr: 'La commande est vide.',
+        recoverable: true,
+      });
+    }
+    
+    // Validate each item
+    for (const item of order.items) {
+      const product = catalogue.find(p => p.id === item.productId);
+      
+      if (!product) {
+        errors.push({
+          code: 'INVALID_PRODUCT',
+          message: `Product ${item.productId} not found`,
+          messageFr: `Produit "${item.name}" introuvable.`,
+          itemId: item.id,
+          recoverable: false,
+        });
+        continue;
+      }
+      
+      if (!product.available) {
+        errors.push({
+          code: 'PRODUCT_UNAVAILABLE',
+          message: `${product.name} no longer available`,
+          messageFr: `${product.name} n'est plus disponible.`,
+          itemId: item.id,
+          recoverable: true,
+        });
+      }
+      
+      if (item.qty < 1 || item.qty > MAX_QUANTITY_PER_ITEM) {
+        errors.push({
+          code: 'INVALID_QUANTITY',
+          message: `Invalid quantity for ${product.name}`,
+          messageFr: `Quantité invalide pour ${product.name}.`,
+          itemId: item.id,
+          recoverable: true,
+        });
+      }
+      
+      // Validate menu components
+      if (item.category === 'menu' && item.components) {
+        const menuRule = menuRules.find(r => 
+          r.menuType === (item.menuType === 'maxi' ? 'adult_maxi' : 'adult_normal')
+        );
+        
+        if (menuRule) {
+          for (const required of menuRule.components.filter(c => c.required)) {
+            if (!item.components.some(c => c.type === required.type)) {
+              const typeFr = required.type === 'side' ? 'accompagnement' : 
+                            required.type === 'drink' ? 'boisson' : 'composant';
+              errors.push({
+                code: 'MISSING_MENU_COMPONENT',
+                message: `Menu missing ${required.type}`,
+                messageFr: `Il manque ${typeFr === 'accompagnement' ? 'l\'' : 'la '}${typeFr} dans le menu.`,
+                itemId: item.id,
+                recoverable: true,
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    return {
+      success: true,
+      data: {
+        valid: errors.length === 0,
+        errors,
+        warnings,
+      }
+    };
+  }
+  
+  /**
+   * Calculate order totals
+   */
+  calculateTotals(items: OrderItem[]): { subtotal: number; tax: number; total: number } {
+    const subtotal = items.reduce((sum, item) => sum + item.linePrice, 0);
+    const tax = Math.round(subtotal * TVA_RATE);
+    const total = subtotal + tax;
+    
+    return { subtotal, tax, total };
+  }
+  
+  /**
+   * Generate order summary for TTS
+   */
+  generateOrderSummary(order: Order, format: 'short' | 'full'): string {
+    if (order.items.length === 0) {
+      return 'La commande est vide.';
+    }
+    
+    if (format === 'short') {
+      const items = order.items.map(i => `${i.qty} ${i.name}`).join(', ');
+      return `${items}, total ${this.formatPrice(order.total)}`;
+    }
+    
+    const lines = order.items.map(item => {
+      let line = `${item.qty}x ${item.name}`;
+      if (item.components?.length) {
+        line += ` (${item.components.map(c => c.name).join(', ')})`;
+      }
+      line += ` - ${this.formatPrice(item.linePrice)}`;
+      return line;
+    });
+    
+    lines.push(`Total: ${this.formatPrice(order.total)}`);
+    return lines.join('\n');
+  }
+  
+  /**
+   * Format price for display/TTS
+   */
+  formatPrice(cents: number): string {
+    const euros = Math.floor(cents / 100);
+    const centimes = cents % 100;
+    if (centimes === 0) {
+      return `${euros} euros`;
+    }
+    return `${euros} euros ${centimes}`;
+  }
+}
+```
+
+---
+
+## 2.5 GESTION MULTI-LOCUTEURS (Famille/Groupe)
+
+Un des défis majeurs du drive-thru vocal est la gestion des situations où plusieurs personnes parlent simultanément (famille avec enfants, groupe d'amis, etc.).
+
+### 2.5.1 Le Problème
+
+```
+Situation typique:
+┌─────────────────────────────────────────────────────────────┐
+│  Parent:    "Je voudrais un menu Gi-"                       │
+│  Enfant 1:  "MOI JE VEUX DES NUGGETS!"                      │
+│  Enfant 2:  "COCA! COCA! COCA!"                             │
+│  Parent:    "-ant avec..."                                  │
+│  Passager:  "Prends-moi un Long Fish"                       │
+│  Enfant 1:  "ET UN JOUET!"                                  │
+└─────────────────────────────────────────────────────────────┘
+
+Résultat audio: Chaos total, signal incompréhensible
+```
+
+**Statistiques terrain:**
+- ~30% des commandes drive-thru impliquent plusieurs locuteurs
+- ~15% ont des overlaps significatifs (>2 secondes)
+- Les familles avec enfants représentent ~40% du chaos audio
+
+### 2.5.2 Architecture de Détection
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    DRIVE-THRU MICROPHONE                        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  PRE-PROCESSING LAYER                           │
+│                                                                 │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────┐  │
+│  │ Noise Reduction │→ │ Voice Activity  │→ │   Overlap      │  │
+│  │   (RNNoise)     │  │   Detection     │  │   Detection    │  │
+│  └─────────────────┘  └─────────────────┘  └────────────────┘  │
+│                                                      │          │
+│                              ┌────────────────────────┘          │
+│                              ▼                                   │
+│                    ┌─────────────────┐                          │
+│                    │    Overlap?     │                          │
+│                    └─────────────────┘                          │
+│                       │           │                              │
+│                      YES          NO                             │
+│                       │           │                              │
+│         ┌─────────────┘           └──────────────┐              │
+│         ▼                                        ▼              │
+│  ┌─────────────────┐                   ┌─────────────────┐      │
+│  │    Speaker      │                   │   Pass-through  │      │
+│  │  Diarization    │                   │   to Realtime   │      │
+│  │  (Pyannote)     │                   │      API        │      │
+│  └─────────────────┘                   └─────────────────┘      │
+│         │                                        │              │
+│         ▼                                        │              │
+│  ┌─────────────────┐                             │              │
+│  │ Select Dominant │                             │              │
+│  │    Speaker      │                             │              │
+│  └─────────────────┘                             │              │
+│         │                                        │              │
+│         └──────────────┬─────────────────────────┘              │
+│                        ▼                                        │
+└─────────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 OPENAI REALTIME API                             │
+└─────────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              MULTI-SPEAKER STATE MANAGER                        │
+│  ┌─────────────────┐    ┌─────────────────┐                    │
+│  │ Overlap Counter │    │  Confirmation   │                    │
+│  │   & History     │    │    Frequency    │                    │
+│  └─────────────────┘    └─────────────────┘                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 2.5.3 Types et Interfaces
+
+```typescript
+// ============================================
+// multi-speaker-types.ts
+// ============================================
+
+/**
+ * Configuration pour la détection multi-locuteurs
+ */
+export interface MultiSpeakerConfig {
+  // Activation du mode
+  enabled: boolean;
+  
+  // Preprocessing audio
+  preprocessing: {
+    // Modèle de diarization (séparation locuteurs)
+    diarizationModel: 'pyannote/speaker-diarization-3.1' | 'speechbrain' | 'none';
+    
+    // Activer la séparation des flux par locuteur
+    separateSpeakerStreams: boolean;
+    
+    // Nombre max de locuteurs à tracker
+    maxSpeakers: number;
+    
+    // Seuil de détection d'overlap (0-1)
+    overlapDetectionThreshold: number;
+  };
+  
+  // Analyse post-transcription
+  postprocessing: {
+    // Détecter les overlaps dans la transcription
+    detectOverlappingSpeech: boolean;
+    
+    // Seuil de confiance pour considérer un overlap
+    confidenceThreshold: number;
+  };
+  
+  // Comportement UX
+  behavior: {
+    // Nombre d'overlaps avant intervention polie
+    overlapsBeforeIntervention: number;
+    
+    // Nombre max de clarifications avant escalade humain
+    maxClarificationsBeforeHuman: number;
+    
+    // Confirmer après chaque item en mode multi-locuteur
+    confirmAfterEachItem: boolean;
+    
+    // Délai supplémentaire après overlap (ms)
+    waitAfterOverlapMs: number;
+  };
+}
+
+/**
+ * Configuration par défaut
+ */
+export const DEFAULT_MULTI_SPEAKER_CONFIG: MultiSpeakerConfig = {
+  enabled: true,
+  preprocessing: {
+    diarizationModel: 'pyannote/speaker-diarization-3.1',
+    separateSpeakerStreams: true,
+    maxSpeakers: 4,
+    overlapDetectionThreshold: 0.6,
+  },
+  postprocessing: {
+    detectOverlappingSpeech: true,
+    confidenceThreshold: 0.5,
+  },
+  behavior: {
+    overlapsBeforeIntervention: 2,
+    maxClarificationsBeforeHuman: 5,
+    confirmAfterEachItem: true,
+    waitAfterOverlapMs: 1500,
+  },
+};
+
+/**
+ * Événement d'overlap détecté
+ */
+export interface OverlapEvent {
+  timestamp: Date;
+  
+  // Overlap détecté ?
+  detected: boolean;
+  
+  // Niveau de confiance (0-1)
+  confidence: number;
+  
+  // Nombre estimé de locuteurs simultanés
+  estimatedSpeakers: number;
+  
+  // Durée de l'overlap en ms
+  durationMs: number;
+  
+  // Audio du locuteur dominant (si extraction possible)
+  dominantSpeakerAudio?: ArrayBuffer;
+  
+  // Caractéristiques vocales détectées
+  voiceCharacteristics?: {
+    hasChildVoice: boolean;        // Voix enfant détectée
+    hasMultipleAdults: boolean;    // Plusieurs adultes
+    dominantPitch: 'low' | 'medium' | 'high';
+  };
+}
+
+/**
+ * État de session multi-locuteurs
+ */
+export interface MultiSpeakerSessionState {
+  // Mode multi-locuteur activé
+  isMultiSpeakerMode: boolean;
+  
+  // Timestamp d'activation
+  activatedAt?: Date;
+  
+  // Nombre de locuteurs détectés dans la session
+  detectedSpeakersCount: number;
+  
+  // Historique des overlaps
+  overlapHistory: OverlapEvent[];
+  
+  // Compteur d'overlaps non résolus
+  unresolvedOverlaps: number;
+  
+  // Compteur de clarifications demandées
+  clarificationCount: number;
+  
+  // Items depuis dernière confirmation
+  itemsSinceLastConfirmation: number;
+  
+  // Dernier locuteur dominant identifié
+  lastDominantSpeakerId?: string;
+  
+  // Enfant détecté dans la voiture
+  childDetected: boolean;
+  
+  // Commande enfant proposée
+  kidsMenuOffered: boolean;
+}
+
+/**
+ * Réponse du handler d'overlap
+ */
+export interface OverlapHandlerResponse {
+  action: 
+    | 'PROCESS_DOMINANT'      // Traiter l'audio du locuteur dominant
+    | 'REQUEST_REPEAT'        // Demander de répéter
+    | 'REQUEST_ONE_SPEAKER'   // Demander qu'une personne parle
+    | 'ESCALATE_TO_HUMAN'     // Passer à un humain
+    | 'WAIT_AND_RETRY';       // Attendre et réessayer
+  
+  // Message à dire au client
+  response?: string;
+  
+  // Audio à traiter (si PROCESS_DOMINANT)
+  audioToProcess?: ArrayBuffer;
+  
+  // Interrompre l'audio en cours ?
+  interruptCurrentAudio: boolean;
+  
+  // Priorité du message
+  priority: 'low' | 'medium' | 'high';
+  
+  // Activer le mode multi-locuteur pour le reste de la session
+  enableMultiSpeakerMode: boolean;
+}
+
+/**
+ * Détection de locuteur dominant
+ */
+export interface DominantSpeakerDetection {
+  // Métriques de scoring
+  metrics: {
+    // Poids du volume relatif
+    volumeWeight: number;
+    
+    // Poids de la clarté du signal
+    signalClarityWeight: number;
+    
+    // Poids de la continuité conversationnelle
+    conversationContinuityWeight: number;
+  };
+  
+  // Fenêtre d'analyse en ms
+  analysisWindowMs: number;
+  
+  // Seuil pour changement de locuteur dominant
+  switchThreshold: number;
+}
+
+export const DEFAULT_DOMINANT_SPEAKER_CONFIG: DominantSpeakerDetection = {
+  metrics: {
+    volumeWeight: 0.3,
+    signalClarityWeight: 0.3,
+    conversationContinuityWeight: 0.4,
+  },
+  analysisWindowMs: 500,
+  switchThreshold: 0.7,
+};
+```
+
+### 2.5.4 Overlap Handler
+
+```typescript
+// ============================================
+// overlap-handler.ts
+// ============================================
+
+import {
+  MultiSpeakerConfig,
+  MultiSpeakerSessionState,
+  OverlapEvent,
+  OverlapHandlerResponse,
+  DEFAULT_MULTI_SPEAKER_CONFIG,
+} from './multi-speaker-types';
+import { Order } from './types';
+
+/**
+ * Messages d'intervention pour les situations multi-locuteurs
+ */
+const INTERVENTION_MESSAGES = {
+  // Première intervention (douce)
+  polite_request: [
+    "Je vous entends tous ! Pour être sûr de ne rien oublier, est-ce qu'une personne peut me donner la commande ?",
+    "Pas de souci, prenez votre temps. Qui me donne la commande ?",
+    "J'ai du mal à tout suivre. On y va un par un ?",
+  ],
+  
+  // Demande de répétition
+  repeat_request: [
+    "Pardon, je n'ai pas bien compris. Vous pouvez répéter ?",
+    "Excusez-moi, vous pouvez me redire ça ?",
+    "J'ai pas bien entendu, vous dites ?",
+  ],
+  
+  // Après détection d'enfant
+  child_detected: [
+    "Et pour les enfants, on part sur une Magic Box ou une Fun Box ?",
+    "Je propose une Magic Box pour le petit ? Avec le jouet !",
+    "Pour les enfants, j'ai la Magic Box avec surprise !",
+  ],
+  
+  // Récapitulatif en cas de chaos
+  chaos_recap: (orderSummary: string) => [
+    `Attendez, je récapitule ce que j'ai : ${orderSummary}. C'est bon jusque-là ?`,
+    `OK, donc pour l'instant j'ai : ${orderSummary}. On continue ?`,
+    `Je fais le point : ${orderSummary}. C'est correct ?`,
+  ],
+  
+  // Transition vers personne suivante
+  next_person: [
+    "C'est noté ! Quelqu'un d'autre veut commander ?",
+    "Parfait ! Et pour les autres ?",
+    "OK c'est bon pour vous. La suite ?",
+  ],
+  
+  // Avant escalade humain
+  pre_escalation: [
+    "Je vais demander à un collègue de vous aider, un instant.",
+    "Je vous passe quelqu'un qui va finaliser votre commande.",
+  ],
+};
+
+/**
+ * Sélectionne un message aléatoire dans une liste
+ */
+function randomMessage(messages: string[]): string {
+  return messages[Math.floor(Math.random() * messages.length)];
+}
+
+/**
+ * Gestionnaire principal des overlaps multi-locuteurs
+ */
+export class OverlapHandler {
+  private config: MultiSpeakerConfig;
+  private state: MultiSpeakerSessionState;
+  
+  constructor(config: Partial<MultiSpeakerConfig> = {}) {
+    this.config = { ...DEFAULT_MULTI_SPEAKER_CONFIG, ...config };
+    this.state = this.createInitialState();
+  }
+  
+  /**
+   * Créer l'état initial de session
+   */
+  private createInitialState(): MultiSpeakerSessionState {
+    return {
+      isMultiSpeakerMode: false,
+      detectedSpeakersCount: 1,
+      overlapHistory: [],
+      unresolvedOverlaps: 0,
+      clarificationCount: 0,
+      itemsSinceLastConfirmation: 0,
+      childDetected: false,
+      kidsMenuOffered: false,
+    };
+  }
+  
+  /**
+   * Réinitialiser l'état (nouvelle commande)
+   */
+  reset(): void {
+    this.state = this.createInitialState();
+  }
+  
+  /**
+   * Obtenir l'état actuel
+   */
+  getState(): MultiSpeakerSessionState {
+    return { ...this.state };
+  }
+  
+  /**
+   * Traiter un événement d'overlap
+   */
+  async handleOverlap(event: OverlapEvent): Promise<OverlapHandlerResponse> {
+    // Enregistrer l'événement
+    this.state.overlapHistory.push(event);
+    
+    if (!event.detected) {
+      // Pas d'overlap, traitement normal
+      return {
+        action: 'PROCESS_DOMINANT',
+        audioToProcess: event.dominantSpeakerAudio,
+        interruptCurrentAudio: false,
+        priority: 'low',
+        enableMultiSpeakerMode: false,
+      };
+    }
+    
+    // Overlap détecté
+    this.state.unresolvedOverlaps++;
+    
+    // Activer le mode multi-locuteur
+    if (!this.state.isMultiSpeakerMode) {
+      this.state.isMultiSpeakerMode = true;
+      this.state.activatedAt = new Date();
+    }
+    
+    // Mettre à jour le nombre de locuteurs
+    this.state.detectedSpeakersCount = Math.max(
+      this.state.detectedSpeakersCount,
+      event.estimatedSpeakers
+    );
+    
+    // Détecter la présence d'enfants
+    if (event.voiceCharacteristics?.hasChildVoice) {
+      this.state.childDetected = true;
+    }
+    
+    // Vérifier si on doit escalader vers humain
+    if (this.shouldEscalateToHuman()) {
+      return {
+        action: 'ESCALATE_TO_HUMAN',
+        response: randomMessage(INTERVENTION_MESSAGES.pre_escalation),
+        interruptCurrentAudio: true,
+        priority: 'high',
+        enableMultiSpeakerMode: true,
+      };
+    }
+    
+    // Vérifier si intervention nécessaire
+    const recentOverlaps = this.countRecentOverlaps(5000); // 5 dernières secondes
+    
+    if (recentOverlaps >= this.config.behavior.overlapsBeforeIntervention) {
+      this.state.clarificationCount++;
+      
+      return {
+        action: 'REQUEST_ONE_SPEAKER',
+        response: randomMessage(INTERVENTION_MESSAGES.polite_request),
+        interruptCurrentAudio: true,
+        priority: 'high',
+        enableMultiSpeakerMode: true,
+      };
+    }
+    
+    // Essayer de traiter le locuteur dominant si confiance suffisante
+    if (event.confidence > 0.5 && event.dominantSpeakerAudio) {
+      return {
+        action: 'PROCESS_DOMINANT',
+        audioToProcess: event.dominantSpeakerAudio,
+        interruptCurrentAudio: false,
+        priority: 'medium',
+        enableMultiSpeakerMode: true,
+      };
+    }
+    
+    // Sinon, demander de répéter
+    this.state.clarificationCount++;
+    
+    return {
+      action: 'REQUEST_REPEAT',
+      response: randomMessage(INTERVENTION_MESSAGES.repeat_request),
+      interruptCurrentAudio: false,
+      priority: 'medium',
+      enableMultiSpeakerMode: true,
+    };
+  }
+  
+  /**
+   * Compter les overlaps récents
+   */
+  private countRecentOverlaps(windowMs: number): number {
+    const now = Date.now();
+    return this.state.overlapHistory.filter(
+      e => e.detected && (now - e.timestamp.getTime()) < windowMs
+    ).length;
+  }
+  
+  /**
+   * Vérifier si on doit escalader vers un humain
+   */
+  private shouldEscalateToHuman(): boolean {
+    return (
+      this.state.clarificationCount >= this.config.behavior.maxClarificationsBeforeHuman ||
+      this.state.unresolvedOverlaps >= 10
+    );
+  }
+  
+  /**
+   * Marquer un overlap comme résolu (commande comprise)
+   */
+  markOverlapResolved(): void {
+    if (this.state.unresolvedOverlaps > 0) {
+      this.state.unresolvedOverlaps--;
+    }
+  }
+  
+  /**
+   * Notifier qu'un item a été ajouté
+   */
+  onItemAdded(): void {
+    this.state.itemsSinceLastConfirmation++;
+    this.markOverlapResolved();
+  }
+  
+  /**
+   * Notifier qu'une confirmation a été faite
+   */
+  onConfirmationGiven(): void {
+    this.state.itemsSinceLastConfirmation = 0;
+  }
+  
+  /**
+   * Vérifier si on doit confirmer maintenant
+   */
+  shouldConfirmNow(): boolean {
+    if (!this.state.isMultiSpeakerMode) {
+      // Mode normal: confirmer tous les 3 items
+      return this.state.itemsSinceLastConfirmation >= 3;
+    }
+    
+    // Mode multi-locuteur: confirmer après chaque item
+    if (this.config.behavior.confirmAfterEachItem) {
+      return this.state.itemsSinceLastConfirmation >= 1;
+    }
+    
+    return this.state.itemsSinceLastConfirmation >= 2;
+  }
+  
+  /**
+   * Générer un message de confirmation adapté
+   */
+  generateConfirmation(order: Order, lastItemName: string): string {
+    if (this.state.isMultiSpeakerMode) {
+      // Confirmation courte en mode multi-locuteur
+      return `${lastItemName}, c'est noté. Ensuite ?`;
+    }
+    
+    return `J'ai ajouté ${lastItemName}.`;
+  }
+  
+  /**
+   * Générer une proposition de menu enfant si approprié
+   */
+  generateKidsMenuOffer(): string | null {
+    if (this.state.childDetected && !this.state.kidsMenuOffered) {
+      this.state.kidsMenuOffered = true;
+      return randomMessage(INTERVENTION_MESSAGES.child_detected);
+    }
+    return null;
+  }
+  
+  /**
+   * Générer un récapitulatif en cas de chaos
+   */
+  generateChaosRecap(orderSummary: string): string {
+    return randomMessage(INTERVENTION_MESSAGES.chaos_recap(orderSummary));
+  }
+  
+  /**
+   * Obtenir le message pour passer à la personne suivante
+   */
+  getNextPersonMessage(): string {
+    return randomMessage(INTERVENTION_MESSAGES.next_person);
+  }
+}
+```
+
+### 2.5.5 Multi-Speaker Flow Manager
+
+```typescript
+// ============================================
+// multi-speaker-flow.ts
+// ============================================
+
+import { Order, OrderItem } from './types';
+import { OverlapHandler, OverlapHandlerResponse } from './overlap-handler';
+import { OverlapEvent, MultiSpeakerSessionState } from './multi-speaker-types';
+
+/**
+ * Gestionnaire de flux pour les commandes multi-locuteurs
+ */
+export class MultiSpeakerFlowManager {
+  private overlapHandler: OverlapHandler;
+  private currentOrder: Order;
+  
+  constructor(order: Order) {
+    this.overlapHandler = new OverlapHandler();
+    this.currentOrder = order;
+  }
+  
+  /**
+   * Mettre à jour la commande courante
+   */
+  updateOrder(order: Order): void {
+    this.currentOrder = order;
+  }
+  
+  /**
+   * Traiter un événement audio
+   */
+  async processAudioEvent(event: OverlapEvent): Promise<{
+    response: OverlapHandlerResponse;
+    additionalMessage?: string;
+  }> {
+    const response = await this.overlapHandler.handleOverlap(event);
+    
+    let additionalMessage: string | undefined;
+    
+    // Vérifier si on doit proposer un menu enfant
+    if (response.action !== 'ESCALATE_TO_HUMAN') {
+      const kidsOffer = this.overlapHandler.generateKidsMenuOffer();
+      if (kidsOffer) {
+        additionalMessage = kidsOffer;
+      }
+    }
+    
+    return { response, additionalMessage };
+  }
+  
+  /**
+   * Notifier l'ajout d'un item
+   */
+  onItemAdded(item: OrderItem): {
+    shouldConfirm: boolean;
+    confirmationMessage?: string;
+  } {
+    this.overlapHandler.onItemAdded();
+    
+    if (this.overlapHandler.shouldConfirmNow()) {
+      const message = this.overlapHandler.generateConfirmation(
+        this.currentOrder,
+        item.name
+      );
+      this.overlapHandler.onConfirmationGiven();
+      
+      return {
+        shouldConfirm: true,
+        confirmationMessage: message,
+      };
+    }
+    
+    return { shouldConfirm: false };
+  }
+  
+  /**
+   * Obtenir l'état courant
+   */
+  getState(): MultiSpeakerSessionState {
+    return this.overlapHandler.getState();
+  }
+  
+  /**
+   * Vérifier si en mode multi-locuteur
+   */
+  isMultiSpeakerMode(): boolean {
+    return this.overlapHandler.getState().isMultiSpeakerMode;
+  }
+  
+  /**
+   * Réinitialiser pour une nouvelle commande
+   */
+  reset(): void {
+    this.overlapHandler.reset();
+  }
+}
+```
+
+### 2.5.6 Configuration VAD Adaptée
+
+```typescript
+// ============================================
+// multi-speaker-vad-config.ts
+// ============================================
+
+/**
+ * Configuration VAD standard (single speaker)
+ */
+export const STANDARD_VAD_CONFIG = {
+  turn_detection: {
+    type: "semantic_vad" as const,
+    threshold: 0.6,
+    silence_duration_ms: 700,
+    prefix_padding_ms: 400,
+    create_response: true,
+  },
+};
+
+/**
+ * Configuration VAD pour environnement multi-locuteurs
+ * Plus tolérante aux interruptions
+ */
+export const MULTI_SPEAKER_VAD_CONFIG = {
+  turn_detection: {
+    type: "semantic_vad" as const,
+    
+    // Seuil plus bas pour capter les interruptions
+    threshold: 0.5,
+    
+    // Plus long pour laisser les gens finir malgré le bruit
+    silence_duration_ms: 900,
+    
+    // Plus de padding pour ne pas couper les phrases
+    prefix_padding_ms: 500,
+    
+    create_response: true,
+  },
+};
+
+/**
+ * Configuration VAD pour chaos total (beaucoup d'enfants)
+ * Très conservatrice
+ */
+export const CHAOS_MODE_VAD_CONFIG = {
+  turn_detection: {
+    type: "semantic_vad" as const,
+    
+    // Seuil très bas
+    threshold: 0.4,
+    
+    // Très long silence requis pour confirmer fin de tour
+    silence_duration_ms: 1200,
+    
+    // Maximum de padding
+    prefix_padding_ms: 600,
+    
+    create_response: true,
+  },
+};
+
+/**
+ * Sélectionner la config VAD appropriée
+ */
+export function selectVadConfig(state: {
+  isMultiSpeakerMode: boolean;
+  detectedSpeakersCount: number;
+  childDetected: boolean;
+  unresolvedOverlaps: number;
+}): typeof STANDARD_VAD_CONFIG {
+  // Mode chaos: beaucoup d'overlaps ou enfants
+  if (state.unresolvedOverlaps >= 3 || 
+      (state.childDetected && state.detectedSpeakersCount >= 3)) {
+    return CHAOS_MODE_VAD_CONFIG;
+  }
+  
+  // Mode multi-locuteur standard
+  if (state.isMultiSpeakerMode) {
+    return MULTI_SPEAKER_VAD_CONFIG;
+  }
+  
+  // Mode normal
+  return STANDARD_VAD_CONFIG;
+}
+```
+
+### 2.5.7 Instructions System Prompt
+
+```typescript
+// ============================================
+// multi-speaker-prompt.ts
+// ============================================
+
+/**
+ * Section du system prompt pour la gestion multi-locuteurs
+ */
+export const MULTI_SPEAKER_SYSTEM_PROMPT = `
+## GESTION MULTI-LOCUTEURS (Familles, Groupes)
+
+Tu vas régulièrement avoir plusieurs personnes qui parlent en même temps dans la voiture (famille avec enfants, groupe d'amis). C'est NORMAL et tu dois gérer ça avec patience et bonne humeur.
+
+### INDICES DE MULTI-LOCUTEURS
+- Plusieurs prénoms mentionnés ("pour moi", "pour papa", "et lui il veut")
+- Voix d'enfants mélangées aux adultes
+- Commandes contradictoires ("Coca!" "Non Sprite!")
+- Phrases interrompues ou incomplètes
+- Bruit de fond avec conversations parallèles
+
+### TON COMPORTEMENT (TRÈS IMPORTANT)
+1. **JAMAIS de frustration** - Même si c'est le chaos total
+2. **Toujours patient et souriant** (dans ta voix)
+3. **Humour léger** pour détendre - "Ah je vois que tout le monde a faim !"
+4. **Structurer poliment** - "Super ! On fait chacun son tour ?"
+
+### STRATÉGIES À UTILISER
+
+**Après 2 overlaps incompréhensibles:**
+→ "Je vous entends tous ! Pour être sûr de ne rien oublier, est-ce qu'une personne peut me donner la commande ?"
+
+**Quand tu détectes un enfant:**
+→ Proposer directement : "Et pour le petit, une Magic Box avec la surprise ?"
+
+**En cas de chaos:**
+→ Récapituler fréquemment : "OK, donc j'ai [COMMANDE]. C'est bon jusque-là ?"
+
+**Après chaque item en mode famille:**
+→ Confirmer rapidement : "Menu Giant, c'est noté ! Ensuite ?"
+
+**Pour passer à la personne suivante:**
+→ "Parfait pour vous ! Et pour les autres ?"
+
+### PHRASES UTILES
+
+| Situation | Phrase |
+|-----------|--------|
+| Début chaos | "Pas de souci, on a le temps !" |
+| Clarification | "Alors, c'est Coca ou Sprite finalement ?" |
+| Enfant crie | "Je t'ai entendu ! Des nuggets c'est ça ?" |
+| Récap | "Je fais le point : [COMMANDE]. On continue ?" |
+| Désaccord | "Hmm, je mets quoi du coup ?" |
+
+### CE QU'IL NE FAUT JAMAIS FAIRE
+- ❌ "Je ne comprends rien" → Trop négatif
+- ❌ "Parlez un à la fois" → Trop sec/autoritaire  
+- ❌ "Calmez-vous" → Condescendant
+- ❌ Ignorer les voix d'enfants → Ils sont clients aussi !
+- ❌ Demander de répéter plus de 2 fois la même chose → Escalader plutôt
+- ❌ S'énerver ou soupirer → Tu es une IA patiente
+
+### DÉTECTION DES PATTERNS
+
+**Pattern "Commande famille type":**
+- 1-2 menus adultes
+- 1-2 menus enfants (Magic Box / Fun Box)
+- Boissons supplémentaires
+- Desserts à partager
+
+**Pattern "Groupe d'amis":**
+- Plusieurs menus similaires
+- Souvent le même burger pour tous
+- Négociation sur les desserts
+
+**Pattern "Couple + bébé":**
+- 2 menus adultes
+- Rien pour le bébé (ou juste compote)
+- Rapide et efficace
+
+### ESCALADE VERS HUMAIN
+
+Si après 4-5 tentatives tu n'arrives toujours pas à comprendre:
+→ "Je vais demander à un collègue de vous aider, un instant s'il vous plaît."
+→ Déclencher le transfert vers équipier humain
+
+Ne JAMAIS rester bloqué indéfiniment - mieux vaut escalader avec le sourire.
+`;
+
+/**
+ * Exemples de dialogues multi-locuteurs pour few-shot
+ */
+export const MULTI_SPEAKER_EXAMPLES = `
+### EXEMPLES DE DIALOGUES MULTI-LOCUTEURS
+
+**Exemple 1: Famille avec enfant**
+Client (parent): "Bonjour, je voudrais un menu Gi-"
+Client (enfant): "DES NUGGETS!"
+Bot: "Bonjour ! Un menu Giant et des nuggets pour le petit, c'est ça ? On part sur une Magic Box ?"
+Client (parent): "Oui une Magic Box"
+Bot: "Super ! Magic Box avec quel jouet, fille ou garçon ?"
+
+**Exemple 2: Désaccord sur la boisson**
+Client 1: "Avec un Coca"
+Client 2: "Non prends Sprite"
+Client 1: "Mais je veux Coca moi"
+Bot: "Alors je mets quoi, Coca ou Sprite ? Ou un de chaque ?"
+Client 1: "Un Coca et un Sprite alors"
+Bot: "Parfait, un Coca et un Sprite ! Autre chose ?"
+
+**Exemple 3: Chaos total**
+[Plusieurs voix simultanées incompréhensibles]
+Bot: "Je vous entends tous ! Pour être sûr de ne rien oublier, qui me donne la commande ?"
+Client (parent): "Pardon. Alors, deux menus Giant, une Magic Box..."
+Bot: "Deux menus Giant et une Magic Box. Je vous écoute pour la suite."
+
+**Exemple 4: Enfant qui interrompt**
+Client (parent): "Je voudrais un menu Long Chicken avec-"
+Client (enfant): "ET MOI UN SUNDAE!"
+Bot: "Un menu Long Chicken, noté ! Et un sundae pour toi. Quel parfum le sundae ?"
+`;
+```
+
+### 2.5.8 Intégration avec le Backend
+
+```typescript
+// ============================================
+// server-multi-speaker-integration.ts
+// ============================================
+
+import { FastifyInstance } from 'fastify';
+import { WebSocket } from 'ws';
+import { MultiSpeakerFlowManager } from './multi-speaker-flow';
+import { selectVadConfig } from './multi-speaker-vad-config';
+import { OverlapEvent } from './multi-speaker-types';
+
+/**
+ * Intégration du multi-speaker handling dans le serveur WebSocket
+ */
+export function integrateMultiSpeakerHandling(
+  fastify: FastifyInstance,
+  clientWs: WebSocket,
+  openaiWs: WebSocket,
+  flowManager: MultiSpeakerFlowManager
+) {
+  // Analyser l'audio entrant pour détecter les overlaps
+  // Note: Cette analyse se fait en parallèle de l'envoi à OpenAI
+  
+  let audioAnalysisBuffer: ArrayBuffer[] = [];
+  let lastOverlapCheck = Date.now();
+  const OVERLAP_CHECK_INTERVAL = 500; // ms
+  
+  /**
+   * Analyser le buffer audio pour détecter des overlaps
+   * Utilise une heuristique simple basée sur l'énergie du signal
+   */
+  async function analyzeForOverlap(audioData: ArrayBuffer): Promise<OverlapEvent | null> {
+    // Convertir en échantillons
+    const samples = new Int16Array(audioData);
+    
+    // Calculer l'énergie RMS
+    let sumSquares = 0;
+    for (let i = 0; i < samples.length; i++) {
+      sumSquares += samples[i] * samples[i];
+    }
+    const rms = Math.sqrt(sumSquares / samples.length);
+    
+    // Détecter les variations rapides d'énergie (indicateur d'overlap)
+    const segments = splitIntoSegments(samples, 10);
+    const energyVariance = calculateEnergyVariance(segments);
+    
+    // Détecter les fréquences multiples (plusieurs voix)
+    const hasMultipleVoices = detectMultipleVoices(samples);
+    
+    // Détecter voix enfant (fréquence élevée)
+    const hasChildVoice = detectChildVoice(samples);
+    
+    // Heuristique de détection d'overlap
+    const overlapScore = 
+      (energyVariance > 0.3 ? 0.4 : 0) +
+      (hasMultipleVoices ? 0.4 : 0) +
+      (rms > 3000 ? 0.2 : 0);
+    
+    if (overlapScore > 0.5) {
+      return {
+        timestamp: new Date(),
+        detected: true,
+        confidence: overlapScore,
+        estimatedSpeakers: hasMultipleVoices ? 2 : 1,
+        durationMs: (samples.length / 16000) * 1000,
+        voiceCharacteristics: {
+          hasChildVoice,
+          hasMultipleAdults: hasMultipleVoices && !hasChildVoice,
+          dominantPitch: hasChildVoice ? 'high' : 'medium',
+        },
+      };
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Handler pour les données audio entrantes
+   */
+  async function handleIncomingAudio(audioData: ArrayBuffer): Promise<void> {
+    audioAnalysisBuffer.push(audioData);
+    
+    // Vérifier périodiquement les overlaps
+    if (Date.now() - lastOverlapCheck > OVERLAP_CHECK_INTERVAL) {
+      lastOverlapCheck = Date.now();
+      
+      // Combiner le buffer
+      const combinedBuffer = combineAudioBuffers(audioAnalysisBuffer);
+      audioAnalysisBuffer = [];
+      
+      // Analyser
+      const overlapEvent = await analyzeForOverlap(combinedBuffer);
+      
+      if (overlapEvent) {
+        const { response, additionalMessage } = await flowManager.processAudioEvent(overlapEvent);
+        
+        // Appliquer la réponse
+        if (response.action === 'REQUEST_ONE_SPEAKER' || response.action === 'REQUEST_REPEAT') {
+          // Interrompre et envoyer le message
+          if (response.interruptCurrentAudio) {
+            openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
+          }
+          
+          // Envoyer la réponse vocale
+          sendBotMessage(openaiWs, response.response!);
+        }
+        
+        if (response.action === 'ESCALATE_TO_HUMAN') {
+          // Déclencher le transfert
+          triggerHumanHandoff(clientWs, response.response!);
+        }
+        
+        // Ajuster la config VAD si nécessaire
+        const newVadConfig = selectVadConfig(flowManager.getState());
+        updateVadConfig(openaiWs, newVadConfig);
+        
+        // Message additionnel (ex: proposition menu enfant)
+        if (additionalMessage) {
+          setTimeout(() => {
+            sendBotMessage(openaiWs, additionalMessage);
+          }, 2000);
+        }
+      }
+    }
+  }
+  
+  /**
+   * Envoyer un message vocal via OpenAI
+   */
+  function sendBotMessage(ws: WebSocket, message: string): void {
+    ws.send(JSON.stringify({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'input_text', text: message }],
+      },
+    }));
+    ws.send(JSON.stringify({ type: 'response.create' }));
+  }
+  
+  /**
+   * Déclencher le transfert vers humain
+   */
+  function triggerHumanHandoff(ws: WebSocket, message: string): void {
+    ws.send(JSON.stringify({
+      type: 'crew_action',
+      action: 'request_takeover',
+      reason: 'multi_speaker_chaos',
+      message,
+    }));
+  }
+  
+  /**
+   * Mettre à jour la config VAD
+   */
+  function updateVadConfig(ws: WebSocket, config: any): void {
+    ws.send(JSON.stringify({
+      type: 'session.update',
+      session: {
+        turn_detection: config.turn_detection,
+      },
+    }));
+  }
+  
+  return { handleIncomingAudio };
+}
+
+// ============================================
+// Fonctions utilitaires d'analyse audio
+// ============================================
+
+function splitIntoSegments(samples: Int16Array, count: number): Int16Array[] {
+  const segmentSize = Math.floor(samples.length / count);
+  const segments: Int16Array[] = [];
+  
+  for (let i = 0; i < count; i++) {
+    segments.push(samples.slice(i * segmentSize, (i + 1) * segmentSize));
+  }
+  
+  return segments;
+}
+
+function calculateEnergyVariance(segments: Int16Array[]): number {
+  const energies = segments.map(seg => {
+    let sum = 0;
+    for (let i = 0; i < seg.length; i++) {
+      sum += seg[i] * seg[i];
+    }
+    return Math.sqrt(sum / seg.length);
+  });
+  
+  const mean = energies.reduce((a, b) => a + b, 0) / energies.length;
+  const variance = energies.reduce((sum, e) => sum + (e - mean) ** 2, 0) / energies.length;
+  
+  return variance / (mean * mean + 1); // Normalized variance
+}
+
+function detectMultipleVoices(samples: Int16Array): boolean {
+  // Simplified: detect if there are multiple dominant frequencies
+  // In production, use proper FFT analysis
+  
+  // Calculate zero-crossing rate variations
+  let crossings = 0;
+  for (let i = 1; i < samples.length; i++) {
+    if ((samples[i] >= 0) !== (samples[i - 1] >= 0)) {
+      crossings++;
+    }
+  }
+  
+  const zcr = crossings / samples.length;
+  
+  // High variance in ZCR suggests multiple voices
+  // This is a simplified heuristic
+  return zcr > 0.1 && zcr < 0.4;
+}
+
+function detectChildVoice(samples: Int16Array): boolean {
+  // Simplified: detect high-pitched voice
+  // Children's voices typically have fundamental frequency > 250Hz
+  
+  let crossings = 0;
+  for (let i = 1; i < samples.length; i++) {
+    if ((samples[i] >= 0) !== (samples[i - 1] >= 0)) {
+      crossings++;
+    }
+  }
+  
+  // Estimate fundamental frequency from zero-crossing rate
+  const sampleRate = 16000;
+  const estimatedF0 = (crossings / 2) / (samples.length / sampleRate);
+  
+  return estimatedF0 > 250;
+}
+
+function combineAudioBuffers(buffers: ArrayBuffer[]): ArrayBuffer {
+  const totalLength = buffers.reduce((sum, buf) => sum + buf.byteLength, 0);
+  const combined = new Uint8Array(totalLength);
+  
+  let offset = 0;
+  for (const buffer of buffers) {
+    combined.set(new Uint8Array(buffer), offset);
+    offset += buffer.byteLength;
+  }
+  
+  return combined.buffer;
+}
+```
+
+### 2.5.9 Résumé des Stratégies
+
+| Niveau | Stratégie | Implémentation |
+|--------|-----------|----------------|
+| **Audio** | Overlap Detection | Analyse énergie + ZCR en temps réel |
+| **Audio** | Child Voice Detection | Fréquence fondamentale > 250Hz |
+| **Audio** | Speaker Diarization | Pyannote (optionnel, edge processing) |
+| **VAD** | Adaptive Config | 3 profils: Standard / Multi / Chaos |
+| **UX** | Polite Intervention | Messages variés après 2 overlaps |
+| **UX** | Frequent Confirmation | Confirmer chaque item en mode multi |
+| **UX** | Kids Menu Offer | Proposition auto si enfant détecté |
+| **UX** | Chaos Recap | Récapitulatif fréquent |
+| **LLM** | System Prompt | Instructions détaillées + exemples |
+| **Fallback** | Human Escalation | Après 5 clarifications échouées |
+
+### 2.5.10 Métriques à Suivre
+
+```typescript
+interface MultiSpeakerMetrics {
+  // Par session
+  sessionMetrics: {
+    multiSpeakerModeActivated: boolean;
+    timeInMultiSpeakerMode: number;        // seconds
+    overlapCount: number;
+    clarificationCount: number;
+    successfulResolutions: number;
+    humanEscalations: number;
+    childMenusOffered: number;
+    childMenusAccepted: number;
+  };
+  
+  // Agrégées (dashboard)
+  aggregateMetrics: {
+    percentSessionsMultiSpeaker: number;   // Target: understand baseline
+    avgOverlapsPerMultiSpeakerSession: number;
+    resolutionRate: number;                // Target: > 85%
+    escalationRate: number;                // Target: < 10%
+    avgTimeToResolution: number;           // seconds
+    childDetectionAccuracy: number;        // Validated manually
+  };
+}
+```
+
+---
+
 ## 3. SÉCURITÉ ET PROTECTION
 
 ### 3.1 Prompt Injection Protection
