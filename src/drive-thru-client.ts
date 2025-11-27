@@ -172,6 +172,47 @@ export class DriveThruClient {
             this.isPlaying = false;
             return;
         }
+
+        this.isPlaying = true;
+        const chunk = this.audioQueue.shift()!;
+
+        if (!this.audioContext) return;
+
+        // Ensure AudioContext is running
+        if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+            console.log('AudioContext resumed for playback');
+        }
+
+        const audioBuffer = this.audioContext.createBuffer(
+            1,
+            chunk.length,
+            this.audioContext.sampleRate
+        );
+
+        audioBuffer.copyToChannel(chunk, 0);
+
+        const source = this.audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(this.audioContext.destination);
+
+        // Schedule playback
+        const currentTime = this.audioContext.currentTime;
+        const startTime = Math.max(currentTime, this.nextStartTime);
+        source.start(startTime);
+        this.nextStartTime = startTime + audioBuffer.duration;
+
+        console.log('Playing audio chunk', {
+            length: chunk.length,
+            duration: audioBuffer.duration,
+            contextState: this.audioContext.state
+        });
+
+        source.onended = () => {
+            this.playNextChunk();
+        };
+    }
+
     private handleServerMessage(message: any) {
         switch (message.type) {
             case 'order_update':
