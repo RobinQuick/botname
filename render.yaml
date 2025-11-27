@@ -4,7 +4,7 @@ services:
     env: node
     plan: free
     buildCommand: npm install --production=false && npm run build
-    startCommand: ls -R dist && npm start
+    startCommand: pwd && ls -la && ls -R dist && node dist/server.js
     envVars:
       - key: NODE_VERSION
         value: 22.0.0
