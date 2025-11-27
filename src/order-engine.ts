@@ -1201,28 +1201,24 @@ export class OrderEngine {
         const euros = (cents / 100).toFixed(2).replace('.', ',');
         return `${euros}€`;
     }
+
     // ============================================
     // DISPLAY HELPERS
     // ============================================
 
     generateOrderDisplayData(order: Order): any {
         return {
-            items: order.items.map(item => {
-                // Find product in catalog to get imageUrl
-                const product = this.catalogue.products.find(p => p.id === item.productId);
-
-                return {
-                    name: item.name,
-                    quantity: item.qty,
-                    size: item.size,
-                    modifiers: item.modifiers.map(m => ({
-                        name: m.name,
-                        extraPrice: m.extraPrice > 0 ? this.formatPrice(m.extraPrice) : null
-                    })),
-                    price: this.formatPrice(item.linePrice),
-                    imageUrl: product?.imageUrl || undefined
-                };
-            }),
+            items: order.items.map(item => ({
+                name: item.name,
+                quantity: item.qty,
+                size: item.size,
+                productId: item.productId,  // Will be used server-side for image lookup
+                modifiers: item.modifiers.map(m => ({
+                    name: m.name,
+                    extraPrice: m.extraPrice > 0 ? this.formatPrice(m.extraPrice) : null
+                })),
+                price: this.formatPrice(item.linePrice)
+            })),
             subtotal: this.formatPrice(order.subtotal),
             discounts: order.discounts.map(d => ({
                 description: d.description,
