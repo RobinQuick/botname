@@ -86,12 +86,6 @@ export class DriveThruClient {
             });
             this.audioContext = audioContext;
 
-            // Resume AudioContext (required for browser autoplay policy)
-            if (audioContext.state === 'suspended') {
-                await audioContext.resume();
-                console.log('AudioContext resumed');
-            }
-
             await audioContext.audioWorklet.addModule('/audio-processor.js');
 
             // Check if disconnected during await
@@ -109,6 +103,12 @@ export class DriveThruClient {
                 }
             });
             this.mediaStream = mediaStream;
+
+            // Resume AudioContext AFTER getUserMedia (user gesture)
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+                console.log('✅ AudioContext resumed after user gesture');
+            }
 
             // Check if disconnected during await
             if (!this.audioContext) {
@@ -129,13 +129,13 @@ export class DriveThruClient {
             source.connect(this.audioWorkletNode);
             this.audioWorkletNode.connect(audioContext.destination); // For monitoring if needed, usually mute
 
-            console.log('Audio initialized successfully', {
+            console.log('✅ Audio initialized successfully', {
                 sampleRate: audioContext.sampleRate,
                 state: audioContext.state
             });
 
         } catch (error) {
-            console.error('Audio initialization failed:', error);
+            console.error('❌ Audio initialization failed:', error);
             this.config.onStatusChange('audio_error');
         }
     }
