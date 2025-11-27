@@ -86,6 +86,12 @@ export class DriveThruClient {
             });
             this.audioContext = audioContext;
 
+            // Resume AudioContext (required for browser autoplay policy)
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+                console.log('AudioContext resumed');
+            }
+
             await audioContext.audioWorklet.addModule('/audio-processor.js');
 
             // Check if disconnected during await
@@ -122,6 +128,11 @@ export class DriveThruClient {
 
             source.connect(this.audioWorkletNode);
             this.audioWorkletNode.connect(audioContext.destination); // For monitoring if needed, usually mute
+
+            console.log('Audio initialized successfully', {
+                sampleRate: audioContext.sampleRate,
+                state: audioContext.state
+            });
 
         } catch (error) {
             console.error('Audio initialization failed:', error);
@@ -161,30 +172,6 @@ export class DriveThruClient {
             this.isPlaying = false;
             return;
         }
-
-        this.isPlaying = true;
-        const chunk = this.audioQueue.shift()!;
-
-        if (!this.audioContext) return;
-
-        const buffer = this.audioContext.createBuffer(1, chunk.length, 24000);
-        buffer.getChannelData(0).set(chunk);
-
-        const source = this.audioContext.createBufferSource();
-        source.buffer = buffer;
-        source.connect(this.audioContext.destination);
-
-        const currentTime = this.audioContext.currentTime;
-        const startTime = Math.max(currentTime, this.nextStartTime);
-
-        source.start(startTime);
-        this.nextStartTime = startTime + buffer.duration;
-
-        source.onended = () => {
-            this.playNextChunk();
-        };
-    }
-
     private handleServerMessage(message: any) {
         switch (message.type) {
             case 'order_update':
