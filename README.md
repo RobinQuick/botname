@@ -26,10 +26,13 @@ To start both the backend server and the frontend client concurrently:
 npm run dev
 ```
 
-- **Backend**: Runs on `http://localhost:3000`
-- **Frontend**: Runs on `http://localhost:5173`
+**IMPORTANT:** This starts two servers:
+- **Frontend (Vite):** http://localhost:5173 ← **USE THIS ADDRESS**
+- **Backend (Fastify):** http://localhost:3000 (WebSocket server, no UI)
 
 ## Usage
+
+> **⚠️ Always use port 5173, not 3000!**
 
 ### Standard Mode
 **URL**: [http://localhost:5173/](http://localhost:5173/)

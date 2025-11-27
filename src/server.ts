@@ -5,11 +5,12 @@ import { WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { config } from './config.js';
+import { config, TOOLS } from './config.js';
 import { logger } from './logger.js';
 import { CatalogueService } from './catalogue-service.js';
 import { OrderEngine, orderEngine } from './order-engine.js';
 import { POSAdapter } from './pos-adapter.js';
+import { customerService } from './customer-service.js';
 import { Order, OrderEngineResult } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,7 +28,7 @@ const fastify = Fastify({
 
 // Register static files
 await fastify.register(fastifyStatic, {
-    root: path.join(__dirname, '../public'),
+    root: path.join(__dirname, 'public'),
     prefix: '/'
 });
 
@@ -66,12 +67,21 @@ fastify.register(async (fastify) => {
 
         logger.info({ sessionId, testMode }, 'New client connection');
 
+        // Robustly determine the socket
+        // @ts-ignore
+        const clientSocket = connection.socket || connection;
+
+        if (!clientSocket) {
+            logger.error({ sessionId }, 'Failed to resolve client socket');
+            return;
+        }
+
         // Initialize session
         const session: SessionState = {
             id: sessionId,
             storeId,
             order: orderEngine.createEmptyOrder(sessionId, storeId),
-            clientWs: (connection as any).socket,
+            clientWs: clientSocket,
             openaiWs: null,
             streamId: null,
             lastAudioTime: Date.now(),
@@ -84,11 +94,11 @@ fastify.register(async (fastify) => {
         connectToOpenAI(session);
 
         // Handle client messages
-        (connection as any).socket.on('message', (message: Buffer) => {
-            handleClientMessage(session, message);
+        clientSocket.on('message', (message: any, isBinary: boolean) => {
+            handleClientMessage(session, message, isBinary);
         });
 
-        (connection as any).socket.on('close', () => {
+        clientSocket.on('close', () => {
             logger.info({ sessionId }, 'Client disconnected');
             if (session.openaiWs) {
                 session.openaiWs.close();
@@ -144,7 +154,9 @@ function connectToOpenAI(session: SessionState) {
                     threshold: config.VAD_THRESHOLD,
                     prefix_padding_ms: config.VAD_PREFIX_PADDING_MS,
                     silence_duration_ms: config.VAD_SILENCE_DURATION_MS
-                }
+                },
+                tools: TOOLS,
+                tool_choice: 'auto'
             }
         };
 
@@ -194,9 +206,9 @@ function connectToOpenAI(session: SessionState) {
 // MESSAGE HANDLING
 // ============================================
 
-function handleClientMessage(session: SessionState, message: any) {
+function handleClientMessage(session: SessionState, message: any, isBinary: boolean) {
     // If binary, it's audio
-    if (Buffer.isBuffer(message)) {
+    if (isBinary) {
         if (session.openaiWs && session.openaiWs.readyState === WebSocket.OPEN) {
             session.openaiWs.send(JSON.stringify({
                 type: 'input_audio_buffer.append',
@@ -222,6 +234,45 @@ function handleClientMessage(session: SessionState, message: any) {
                     type: 'response.create'
                 }));
             }
+        } else if (data.type === 'identify_customer') {
+            const customer = customerService.getCustomerByQrCode(data.qrCode);
+            if (customer && session.openaiWs && session.openaiWs.readyState === WebSocket.OPEN) {
+                logger.info({ sessionId: session.id, customer: customer.name }, 'Customer identified');
+
+                // Send system event to OpenAI to inform about the customer
+                const contextMessage = `
+                    [SYSTÈME] Le client est identifié : ${customer.name}.
+                    Sa dernière commande : ${JSON.stringify(customer.lastOrder)}.
+                    ${customer.children ? `Il a ${customer.children} enfants.` : ''}
+                    
+                    TACHE : 
+                    1. Accueille-le brièvement par son nom.
+                    2. ${customer.children ? "Demande-lui si ses enfants sont là aujourd'hui (pour proposer des Magic Box)." : ""}
+                    3. Propose-lui sa dernière commande.
+                    
+                    Exemple : "Bonjour Thomas ! Vous avez les enfants avec vous aujourd'hui ? On repart sur votre Menu Giant habituel ?"
+                    NE FAIS PAS de longues descriptions. Sois direct.
+                `;
+
+                session.openaiWs.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                        type: 'message',
+                        role: 'user', // Using user role as system instructions to prompt immediate reaction
+                        content: [
+                            {
+                                type: 'input_text',
+                                text: contextMessage
+                            }
+                        ]
+                    }
+                }));
+
+                // Trigger response
+                session.openaiWs.send(JSON.stringify({
+                    type: 'response.create'
+                }));
+            }
         }
     } catch (error) {
         // Ignore invalid JSON
@@ -232,9 +283,11 @@ function handleOpenAIEvent(session: SessionState, event: any) {
     switch (event.type) {
         case 'response.audio.delta':
             // Stream audio to client
-            if (event.delta) {
+            if (event.delta && session.clientWs) {
                 const audioBuffer = Buffer.from(event.delta, 'base64');
-                session.clientWs.send(audioBuffer);
+                if (session.clientWs.readyState === WebSocket.OPEN) {
+                    session.clientWs.send(audioBuffer);
+                }
             }
             break;
 
@@ -257,16 +310,10 @@ function handleOpenAIEvent(session: SessionState, event: any) {
             break;
 
         case 'response.done':
-            // Check for function calls or text content that contains JSON
-            if (event.response && event.response.output) {
-                for (const item of event.response.output) {
-                    if (item.type === 'message' && item.content) {
-                        for (const content of item.content) {
-                            if (content.type === 'text') {
-                                processLLMResponse(session, content.text);
-                            }
-                        }
-                    }
+            const output = event.response?.output || [];
+            for (const item of output) {
+                if (item.type === 'function_call') {
+                    handleFunctionCall(session, item);
                 }
             }
             break;
@@ -281,83 +328,98 @@ function handleOpenAIEvent(session: SessionState, event: any) {
 // LOGIC PROCESSING
 // ============================================
 
-async function processLLMResponse(session: SessionState, text: string) {
+async function handleFunctionCall(session: SessionState, item: any) {
+    const { name, call_id, arguments: argsString } = item;
+    let args;
+
     try {
-        // Extract JSON from response (it might be wrapped in markdown)
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) return;
+        args = JSON.parse(argsString);
+    } catch (e) {
+        logger.error({ sessionId: session.id, error: e }, 'Failed to parse function arguments');
+        return;
+    }
 
-        const data = JSON.parse(jsonMatch[0]);
-        const catalogue = catalogueService.getCatalogue(session.storeId);
-        const menuRules = catalogueService.getMenuRules(session.storeId);
+    logger.info({ sessionId: session.id, function: name, args }, 'Executing function call');
 
-        let orderUpdated = false;
-        let result: OrderEngineResult<Order> | null = null;
+    let result: any = { success: true };
+    const catalogue = catalogueService.getCatalogue(session.storeId);
+    const menuRules = catalogueService.getMenuRules(session.storeId);
+    let orderUpdated = false;
 
-        // Process intents
-        if (data.intent === 'ADD_ITEM' && data.items) {
-            for (const item of data.items) {
-                if (item.action === 'add') {
-                    result = orderEngine.addItemToOrder(
-                        session.order,
-                        {
-                            productName: item.productRef,
-                            quantity: item.qty,
-                            size: item.size,
-                            modifiers: item.modifiers?.map((m: any) => ({
-                                type: m.type,
-                                productName: m.productRef
-                            }))
-                        },
-                        catalogue,
-                        menuRules
-                    );
-
-                    if (result && result.success && result.data) {
-                        session.order = result.data;
-                        orderUpdated = true;
-                    }
-                }
-            }
-        } else if (data.intent === 'REMOVE_ITEM' && data.items) {
-            for (const item of data.items) {
-                result = orderEngine.removeItemByName(
-                    session.order,
-                    item.productRef,
-                    catalogue
-                );
-                if (result && result.success && result.data) {
-                    session.order = result.data;
-                    orderUpdated = true;
-                }
-            }
-        } else if (data.intent === 'CONFIRM_ORDER') {
-            // Send to POS
-            if (session.testMode) {
-                logger.info({ sessionId: session.id }, 'Test mode: Skipping POS submission');
+    if (name === 'add_item') {
+        const engineResult = orderEngine.addItemToOrder(
+            session.order,
+            {
+                productName: args.productName,
+                quantity: args.quantity,
+                size: args.size,
+                modifiers: args.modifiers
+            },
+            catalogue,
+            menuRules
+        );
+        if (engineResult.success && engineResult.data) {
+            session.order = engineResult.data;
+            orderUpdated = true;
+            result = { success: true, message: 'Item added successfully' };
+        } else {
+            result = { success: false, message: engineResult.error };
+        }
+    } else if (name === 'remove_item') {
+        const engineResult = orderEngine.removeItemByName(
+            session.order,
+            args.productName,
+            catalogue
+        );
+        if (engineResult.success && engineResult.data) {
+            session.order = engineResult.data;
+            orderUpdated = true;
+            result = { success: true, message: 'Item removed successfully' };
+        } else {
+            result = { success: false, message: engineResult.error };
+        }
+    } else if (name === 'confirm_order') {
+        if (session.testMode) {
+            session.order.status = 'sent_to_pos';
+            session.order.posOrderId = `TEST-${Date.now()}`;
+            orderUpdated = true;
+            result = { success: true, message: 'Order confirmed in test mode' };
+        } else {
+            const posResult = await posAdapter.createOrder(session.order);
+            if (posResult.success) {
                 session.order.status = 'sent_to_pos';
-                session.order.posOrderId = `TEST-${Date.now()}`;
+                session.order.posOrderId = posResult.orderId;
                 orderUpdated = true;
+                result = { success: true, message: 'Order sent to POS' };
             } else {
-                const posResult = await posAdapter.createOrder(session.order);
-                if (posResult.success) {
-                    session.order.status = 'sent_to_pos';
-                    session.order.posOrderId = posResult.orderId;
-                    orderUpdated = true;
-                }
+                result = { success: false, message: 'Failed to send to POS' };
             }
         }
+    }
 
-        // Update client if order changed
-        if (orderUpdated) {
-            sendToClient(session, {
-                type: 'order_update',
-                order: orderEngine.generateOrderDisplayData(session.order)
-            });
-        }
+    // Update client UI
+    if (orderUpdated) {
+        sendToClient(session, {
+            type: 'order_update',
+            order: orderEngine.generateOrderDisplayData(session.order)
+        });
+    }
 
-    } catch (error) {
-        logger.error({ sessionId: session.id, error }, 'Failed to process LLM response');
+    // Send result back to OpenAI
+    if (session.openaiWs && session.openaiWs.readyState === WebSocket.OPEN) {
+        session.openaiWs.send(JSON.stringify({
+            type: 'conversation.item.create',
+            item: {
+                type: 'function_call_output',
+                call_id: call_id,
+                output: JSON.stringify(result)
+            }
+        }));
+
+        // Trigger response generation based on the tool output
+        session.openaiWs.send(JSON.stringify({
+            type: 'response.create'
+        }));
     }
 }
 

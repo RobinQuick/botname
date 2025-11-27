@@ -207,8 +207,14 @@ export class DriveThruClient {
     }
 
     forceReply() {
-        if (this.ws) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({ type: 'force_reply' }));
+        }
+    }
+
+    identifyCustomer(qrCode: string) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'identify_customer', qrCode }));
         }
     }
 }
