@@ -469,8 +469,8 @@ function loadConfig(): Config {
     VAD_PREFIX_PADDING_MS: parseInt(process.env.VAD_PREFIX_PADDING_MS || '500'),
     VAD_SILENCE_DURATION_MS: parseInt(process.env.VAD_SILENCE_DURATION_MS || '700'),
 
-    // LLM - Optimized for brevity
-    LLM_TEMPERATURE: parseFloat(process.env.LLM_TEMPERATURE || '0.8'),
+    // LLM - Optimized for natural + consistent behavior
+    LLM_TEMPERATURE: parseFloat(process.env.LLM_TEMPERATURE || '0.6'),
     MAX_RESPONSE_TOKENS: parseInt(process.env.MAX_RESPONSE_TOKENS || '150'),
 
     // Thresholds
