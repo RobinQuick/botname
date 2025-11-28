@@ -35,7 +35,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
     const transcriptEndRef = useRef<HTMLDivElement>(null);
     const orderContainerRef = useRef<HTMLDivElement>(null);
 
-    // Initial Suggestions (Always visible in this design until order confirms)
+    // Initial Suggestions (Demo data)
     useEffect(() => {
         setSuggestions([
             { name: 'Sundae Chocolat', image: getProductImage('Sundae Chocolat') },
@@ -111,6 +111,26 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
         }
     };
 
+    const testAudio = () => {
+        try {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 440; // A4
+            osc.type = 'sine';
+            osc.start();
+            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.5);
+            osc.stop(ctx.currentTime + 0.5);
+            console.log('🔊 Test tone played');
+        } catch (e) {
+            console.error('❌ Audio test failed:', e);
+            alert('Audio test failed. Check console.');
+        }
+    };
+
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/drive-thru`;
 
     return (
@@ -139,6 +159,12 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                 <img src="/logo.png" alt="Quick Logo" className="h-16 object-contain" />
                 <h1 className="text-4xl font-bold text-white tracking-widest font-['Oswald'] uppercase drop-shadow-md">Votre Commande</h1>
                 <div className="flex items-center gap-4">
+                    <button
+                        onClick={testAudio}
+                        className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full text-xs text-white/70 font-mono border border-white/10 transition-colors"
+                    >
+                        🔊 TEST AUDIO
+                    </button>
                     <div className={`px-4 py-2 rounded-full border ${status === 'connected' ? 'border-green-500/50 bg-green-500/10 text-green-400' : 'border-red-500/50 bg-red-500/10 text-red-400'} text-xs font-mono uppercase tracking-wider`}>
                         {status}
                     </div>
@@ -146,7 +172,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
             </div>
 
             {/* MAIN LAYOUT: 2 COLUMNS (Order Card + Transcript) */}
-            <div className="absolute top-28 bottom-48 left-0 right-0 px-8 grid grid-cols-12 gap-8">
+            <div className="absolute top-28 bottom-8 left-0 right-0 px-8 grid grid-cols-12 gap-8">
 
                 {/* LEFT: TRANSCRIPT (Subtle) */}
                 <div className="col-span-4 flex flex-col justify-center h-full opacity-80">
@@ -177,9 +203,9 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
 
                 {/* CENTER/RIGHT: WHITE ORDER CARD (The Star) */}
                 <div className="col-span-8 flex justify-center items-center h-full">
-                    <div ref={orderContainerRef} className="white-card w-full max-w-2xl h-[70vh] flex flex-col relative overflow-hidden transform transition-all duration-500">
+                    <div ref={orderContainerRef} className="white-card w-full max-w-2xl h-[85vh] flex flex-col relative overflow-hidden transform transition-all duration-500">
                         {/* Card Header */}
-                        <div className="bg-[#f8f8f8] p-6 border-b border-gray-100 flex justify-between items-center">
+                        <div className="bg-[#f8f8f8] p-6 border-b border-gray-100 flex justify-between items-center flex-shrink-0">
                             <span className="text-gray-400 font-bold tracking-widest text-sm uppercase">Ticket #042</span>
                             <span className="text-[#E2001A] font-bold text-lg">SUR PLACE</span>
                         </div>
@@ -230,8 +256,25 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                             )}
                         </div>
 
+                        {/* SUGGESTIONS AREA (Inside Card) */}
+                        {suggestions.length > 0 && (
+                            <div className="bg-gray-50 p-4 border-t border-gray-100 flex-shrink-0">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center">Suggestions pour vous</h4>
+                                <div className="flex gap-4 overflow-x-auto pb-2 justify-center">
+                                    {suggestions.map((item, idx) => (
+                                        <div key={idx} className="bg-white rounded-xl p-3 w-28 flex flex-col items-center shadow-sm border border-gray-100 cursor-pointer hover:border-[#E2001A] transition-colors group">
+                                            <div className="w-16 h-16 mb-2">
+                                                <img src={item.image} alt={item.name} className="w-full h-full object-contain group-hover:scale-110 transition-transform" />
+                                            </div>
+                                            <span className="text-[10px] font-bold text-center text-gray-800 leading-tight uppercase font-['Oswald']">{item.name}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Total Bar */}
-                        <div className="bg-[#E2001A] p-6 text-white flex justify-between items-center shadow-[0_-10px_40px_rgba(226,0,26,0.3)] z-20">
+                        <div className="bg-[#E2001A] p-6 text-white flex justify-between items-center shadow-[0_-10px_40px_rgba(226,0,26,0.3)] z-20 flex-shrink-0">
                             <div className="flex flex-col">
                                 <span className="text-white/80 text-sm font-medium uppercase tracking-widest">Total à payer</span>
                                 <span className="text-xs text-white/60">{order?.itemCount || 0} articles</span>
@@ -239,20 +282,6 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                             <span className="text-5xl font-bold font-['Oswald'] tracking-tight">{order?.total || '0,00 €'}</span>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            {/* BOTTOM SUGGESTIONS PANEL */}
-            <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black via-black/90 to-transparent z-40 flex items-center justify-center pb-6">
-                <div className="flex gap-6 overflow-x-auto px-8 pb-4 pt-8 w-full justify-center max-w-6xl">
-                    {suggestions.map((item, idx) => (
-                        <div key={idx} className="white-card w-32 h-32 flex-shrink-0 flex flex-col items-center justify-center p-2 gap-2 cursor-pointer hover:scale-105 transition-transform duration-300 shadow-lg group">
-                            <div className="w-16 h-16 relative">
-                                <img src={item.image} alt={item.name} className="w-full h-full object-contain group-hover:scale-110 transition-transform duration-500" />
-                            </div>
-                            <span className="text-[#1a1a1a] font-bold text-xs text-center uppercase font-['Oswald'] leading-tight">{item.name}</span>
-                        </div>
-                    ))}
                 </div>
             </div>
 

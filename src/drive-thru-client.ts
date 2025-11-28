@@ -166,6 +166,8 @@ export class DriveThruClient {
             float32Array[i] = int16Array[i] / 0x8000;
         }
 
+        console.log(`🎤 Received audio chunk: ${data.byteLength} bytes, ${float32Array.length} samples`);
+
         this.audioQueue.push(float32Array);
 
         if (!this.isPlaying) {
