@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DriveThruClient } from './drive-thru-client.js';
+import { createConfettiExplosion } from './confetti.js';
 
 interface OrderItemDisplay {
     name: string;
@@ -27,16 +28,38 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
     const [status, setStatus] = useState<string>('disconnected');
     const [order, setOrder] = useState<OrderDisplayData | null>(null);
     const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
+    const [isRunning, setIsRunning] = useState<boolean>(true);
     const clientRef = useRef<DriveThruClient | null>(null);
     const transcriptEndRef = useRef<HTMLDivElement>(null);
+    const orderContainerRef = useRef<HTMLDivElement>(null);
+
+    // Request mic permission on page load
+    useEffect(() => {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(() => console.log('✅ Mic permission granted'))
+            .catch(err => {
+                console.error('❌ Mic permission denied:', err);
+                alert('Veuillez autoriser le microphone pour utiliser le bot vocal!');
+            });
+    }, []);
 
     useEffect(() => {
+        if (!isRunning) return; // Don't connect if stopped
+
         clientRef.current = new DriveThruClient({
             serverUrl: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/drive-thru`,
             testMode,
             onOrderUpdate: (newOrder: any) => setOrder(newOrder),
             onTranscript: (role: string, text: string) => {
                 setTranscripts(prev => [...prev, { role: role as 'assistant' | 'user', text }]);
+
+                // Detect order confirmation keywords
+                if (role === 'assistant') {
+                    const confirmKeywords = ['prochain guichet', 'confirmé', 'validé', 'merci', 'bonne journée'];
+                    if (confirmKeywords.some(keyword => text.toLowerCase().includes(keyword))) {
+                        triggerOrderConfirmation();
+                    }
+                }
             },
             onStatusChange: (newStatus: string) => setStatus(newStatus)
         });
@@ -46,13 +69,46 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
         return () => {
             clientRef.current?.disconnect();
         };
-    }, []);
+    }, [isRunning]);
+
+    const triggerOrderConfirmation = () => {
+        if (orderContainerRef.current) {
+            // Animate order panel (implode)
+            orderContainerRef.current.classList.add('order-confirm-animation');
+
+            // Trigger confetti explosion
+            setTimeout(() => {
+                createConfettiExplosion(document.body);
+            }, 300);
+
+            // Reset after animation
+            setTimeout(() => {
+                setOrder(null);
+                setTranscripts([]);
+                if (orderContainerRef.current) {
+                    orderContainerRef.current.classList.remove('order-confirm-animation');
+                }
+            }, 2000);
+        }
+    };
 
     useEffect(() => {
         if (transcriptEndRef.current) {
             transcriptEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [transcripts]);
+
+    const handleToggleBot = () => {
+        if (isRunning) {
+            // STOP the bot
+            clientRef.current?.disconnect();
+            setIsRunning(false);
+            setStatus('stopped');
+        } else {
+            // START the bot
+            setIsRunning(true);
+        }
+    };
 
     const handleInterrupt = () => {
         clientRef.current?.interrupt();
@@ -87,7 +143,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                     </div>
 
                     {/* Order List - SCROLLABLE ROW */}
-                    <div className="glass-panel rounded-2xl p-6 flex flex-col overflow-hidden">
+                    <div ref={orderContainerRef} className="glass-panel rounded-2xl p-6 flex flex-col overflow-hidden">
                         <div className="flex justify-between items-end mb-6 border-b border-white/10 pb-4 flex-shrink-0">
                             <h2 className="text-3xl font-bold text-white">VOTRE COMMANDE</h2>
                             {testMode && <span className="px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold border border-yellow-500/50">TEST MODE</span>}
@@ -190,10 +246,10 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                         <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
                             <div className="grid grid-cols-2 gap-3">
                                 <button
-                                    onClick={handleInterrupt}
-                                    className="p-3 bg-red-600/80 hover:bg-red-600 text-white rounded-xl font-bold transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 text-sm backdrop-blur-sm"
+                                    onClick={handleToggleBot}
+                                    className={`p-3 ${isRunning ? 'bg-red-600/80 hover:bg-red-600' : 'bg-green-600/80 hover:bg-green-600'} text-white rounded-xl font-bold transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 text-sm backdrop-blur-sm`}
                                 >
-                                    STOP
+                                    {isRunning ? '⏹ STOP' : '▶ START'}
                                 </button>
                                 <button
                                     onClick={handleForceReply}

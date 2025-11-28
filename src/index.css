@@ -137,3 +137,51 @@ h6 {
 * {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* ============================================
+   CONFETTI & ORDER CONFIRMATION ANIMATIONS
+   ============================================ */
+
+/* Confetti burst from center */
+@keyframes confetti-burst {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+
+  100% {
+    transform:
+      translate(calc(cos(var(--angle)) * var(--velocity)),
+        calc(sin(var(--angle)) * var(--velocity) + 400px)) rotate(var(--rotation));
+    opacity: 0;
+  }
+}
+
+/* Order container implodes into ball then explodes */
+@keyframes order-implode {
+  0% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(0.1) rotate(180deg);
+    opacity: 0.8;
+    border-radius: 50%;
+  }
+
+  100% {
+    transform: scale(0) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.order-confirm-animation {
+  animation: order-implode 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+.confetti {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+}
