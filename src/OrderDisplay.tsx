@@ -79,11 +79,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                     }
                 }
             },
-            onOrderUpdate: (newOrder: any) => {
-                setOrder(newOrder);
-                // Clear suggestions if order updates (user chose something)
-                if (suggestions.length > 0) setSuggestions([]);
-            },
+
         });
 
         clientRef.current.connect();
