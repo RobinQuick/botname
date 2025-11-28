@@ -90,7 +90,9 @@ export class DriveThruClient {
 
             // Check if disconnected during await
             if (!this.audioContext) {
-                audioContext.close();
+                if (audioContext.state !== 'closed') {
+                    await audioContext.close().catch(e => console.warn('Error closing abandoned context:', e));
+                }
                 return;
             }
 
@@ -113,7 +115,9 @@ export class DriveThruClient {
             // Check if disconnected during await
             if (!this.audioContext) {
                 mediaStream.getTracks().forEach(track => track.stop());
-                audioContext.close();
+                if (audioContext.state !== 'closed') {
+                    await audioContext.close().catch(e => console.warn('Error closing abandoned context:', e));
+                }
                 return;
             }
 
@@ -146,7 +150,9 @@ export class DriveThruClient {
             this.mediaStream = null;
         }
         if (this.audioContext) {
-            this.audioContext.close();
+            if (this.audioContext.state !== 'closed') {
+                this.audioContext.close().catch(e => console.warn('Error closing AudioContext:', e));
+            }
             this.audioContext = null;
         }
     }
@@ -180,8 +186,12 @@ export class DriveThruClient {
 
         // Ensure AudioContext is running
         if (this.audioContext.state === 'suspended') {
-            await this.audioContext.resume();
+            await this.audioContext.resume().catch(e => console.warn('Error resuming playback context:', e));
             console.log('AudioContext resumed for playback');
+        } else if (this.audioContext.state === 'closed') {
+            console.warn('Cannot play audio: Context is closed');
+            this.isPlaying = false;
+            return;
         }
 
         const audioBuffer = this.audioContext.createBuffer(
