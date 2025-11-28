@@ -14,19 +14,6 @@ import { customerService } from './customer-service.js';
 import { Order, OrderEngineResult } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Services
-const catalogueService = new CatalogueService(config.POS_API_URL, config.POS_API_KEY);
-const posAdapter = new POSAdapter(config.POS_API_URL, config.POS_API_KEY, config.POS_TIMEOUT_MS);
-
-// Server setup
-const fastify = Fastify({
-    logger: true,
-    trustProxy: true
-});
-
-// Register static files
 await fastify.register(fastifyStatic, {
     root: path.join(__dirname, 'public'),
     prefix: '/'
