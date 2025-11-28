@@ -21,6 +21,7 @@ export class DriveThruClient {
     private audioQueue: Float32Array[] = [];
     private isPlaying: boolean = false;
     private nextStartTime: number = 0;
+    private audioInitialized: boolean = false;
 
     constructor(private config: ClientConfig) { }
 
@@ -36,7 +37,6 @@ export class DriveThruClient {
 
             this.ws.onopen = () => {
                 this.config.onStatusChange('connected');
-                this.initAudio();
             };
 
             this.ws.onmessage = async (event) => {
@@ -80,6 +80,10 @@ export class DriveThruClient {
     }
 
     private async initAudio(): Promise<void> {
+        if (this.audioInitialized) {
+            return;
+        }
+
         try {
             const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
                 sampleRate: 24000 // OpenAI Realtime API standard
@@ -138,6 +142,8 @@ export class DriveThruClient {
                 state: audioContext.state
             });
 
+            this.audioInitialized = true;
+
         } catch (error) {
             console.error('❌ Audio initialization failed:', error);
             this.config.onStatusChange('audio_error');
@@ -155,6 +161,8 @@ export class DriveThruClient {
             }
             this.audioContext = null;
         }
+
+        this.audioInitialized = false;
     }
 
     private handleAudioFromServer(data: ArrayBuffer) {
@@ -226,6 +234,11 @@ export class DriveThruClient {
     }
 
     private handleServerMessage(message: any) {
+        if (message.type === 'status') {
+            this.handleStatusMessage(message);
+            return;
+        }
+
         switch (message.type) {
             case 'order_update':
                 this.config.onOrderUpdate(message.order);
@@ -233,6 +246,25 @@ export class DriveThruClient {
             case 'transcript':
                 this.config.onTranscript(message.role, message.text);
                 break;
+        }
+    }
+
+    private handleStatusMessage(message: any) {
+        if (message.status === 'openai_connected') {
+            this.config.onStatusChange('ready');
+            this.initAudio();
+            return;
+        }
+
+        if (message.status === 'openai_disconnected') {
+            this.config.onStatusChange('openai_disconnected');
+            return;
+        }
+
+        if (message.status === 'openai_error') {
+            const errorMessage = message.message || 'OpenAI connection error';
+            console.error('OpenAI error from server:', errorMessage);
+            this.config.onStatusChange('error');
         }
     }
 

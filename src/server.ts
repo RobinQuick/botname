@@ -133,6 +133,12 @@ function connectToOpenAI(session: SessionState) {
         logger.info({ sessionId: session.id }, 'Connected to OpenAI Realtime API');
         session.openaiWs = ws;
 
+        // Notify client that upstream connection is ready to receive audio
+        sendToClient(session, {
+            type: 'status',
+            status: 'openai_connected'
+        });
+
         // Configure session
         const catalogue = catalogueService.getCatalogue(session.storeId);
         const menuRules = catalogueService.getMenuRules(session.storeId);
@@ -194,11 +200,22 @@ function connectToOpenAI(session: SessionState) {
 
     ws.on('error', (error) => {
         logger.error({ sessionId: session.id, error }, 'OpenAI WebSocket error');
+
+        sendToClient(session, {
+            type: 'status',
+            status: 'openai_error',
+            message: error instanceof Error ? error.message : 'OpenAI connection error'
+        });
     });
 
     ws.on('close', () => {
         logger.info({ sessionId: session.id }, 'OpenAI WebSocket closed');
         session.openaiWs = null;
+
+        sendToClient(session, {
+            type: 'status',
+            status: 'openai_disconnected'
+        });
     });
 }
 
