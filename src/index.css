@@ -1,147 +1,168 @@
-  border-color: rgba(255, 255, 255, 0.1);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(226, 0, 26, 0.15);
-  }
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
 
-  .glass-card:active {
-    transform: translateY(0px) scale(0.98);
-  }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  .text-glow {
-    text-shadow: 0 0 20px var(--quick-red-glow);
-  }
+:root {
+  --quick-red: #E2001A;
+  --quick-red-dark: #b30015;
+  --quick-red-glow: rgba(226, 0, 26, 0.6);
+  --bg-dark: #0a0a0a;
+  --card-bg: #ffffff;
+  --text-main: #1a1a1a;
+  --text-sub: #666666;
+  --shadow-card: 0 10px 30px -5px rgba(0, 0, 0, 0.3);
+  --glass-bg: rgba(20, 20, 20, 0.6);
+}
 
-  .aura-gradient {
-    background: radial-gradient(circle at center, var(--quick-red) 0%, transparent 70%);
-    opacity: 0.15;
-    filter: blur(60px);
-    pointer-events: none;
-  }
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-dark);
+  background-image: radial-gradient(circle at 50% 0%, #2a0a0d 0%, #0a0a0a 60%);
+  color: var(--text-main);
+  min-height: 100vh;
+  overflow: hidden;
+}
 
-  /* Custom Scrollbar */
-  ::-webkit-scrollbar {
-    width: 6px;
-  }
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
+/* White Card Theme Utilities */
+.white-card {
+  background: var(--card-bg);
+  border-radius: 24px;
+  box-shadow: var(--shadow-card);
+  color: var(--text-main);
+}
 
-  ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 3px;
-  }
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
-  }
+.text-glow {
+  text-shadow: 0 0 20px var(--quick-red-glow);
+}
 
-  /* ============================================
-   MODERN ANIMATIONS
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================
+   ANIMATIONS
    ============================================ */
 
-  /* Slide in from left for order items */
-  @keyframes slideInFromLeft {
-    from {
-      transform: translateX(-30px);
-      opacity: 0;
-    }
-
-    to {
-      transform: translateX(0);
-      opacity: 1;
-    }
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(-30px);
+    opacity: 0;
   }
 
-  /* Pulse glow for connected status */
-  @keyframes pulseGlow {
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
 
-    0%,
-    100% {
-      box-shadow: 0 0 10px currentColor;
-    }
+.animate-slideInFromLeft {
+  animation: slideInFromLeft 0.4s ease-out forwards;
+}
 
-    50% {
-      box-shadow: 0 0 20px currentColor, 0 0 30px currentColor;
-    }
+@keyframes fadeIn {
+  from {
+    opacity: 0;
   }
 
-  /* Fade in animation */
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
+  to {
+    opacity: 1;
+  }
+}
 
-    to {
-      opacity: 1;
-    }
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Confetti & Order Confirmation */
+@keyframes order-implode {
+  0% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
   }
 
-  /* Smooth transitions */
-  * {
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  50% {
+    transform: scale(0.1) rotate(180deg);
+    opacity: 0.8;
+    border-radius: 50%;
   }
 
-  /* ============================================
-   CONFETTI & ORDER CONFIRMATION ANIMATIONS
-   ============================================ */
+  100% {
+    transform: scale(0) rotate(360deg);
+    opacity: 0;
+  }
+}
 
-  /* Confetti burst from center */
-  @keyframes confetti-burst {
-    0% {
-      transform: translate(0, 0) rotate(0deg);
-      opacity: 1;
-    }
+.order-confirm-animation {
+  animation: order-implode 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
 
-    100% {
-      transform:
-        translate(calc(cos(var(--angle)) * var(--velocity)),
-          calc(sin(var(--angle)) * var(--velocity) + 400px)) rotate(var(--rotation));
-      opacity: 0;
-    }
+@keyframes confetti-burst {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
   }
 
-  /* Order container implodes into ball then explodes */
-  @keyframes order-implode {
-    0% {
-      transform: scale(1) rotate(0deg);
-      opacity: 1;
-    }
+  100% {
+    transform:
+      translate(calc(cos(var(--angle)) * var(--velocity)),
+        calc(sin(var(--angle)) * var(--velocity) + 400px)) rotate(var(--rotation));
+    opacity: 0;
+  }
+}
 
-    50% {
-      transform: scale(0.1) rotate(180deg);
-      opacity: 0.8;
-      border-radius: 50%;
-    }
+.confetti {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+}
 
-    100% {
-      transform: scale(0) rotate(360deg);
-      opacity: 0;
-    }
+@keyframes slideUp {
+  from {
+    transform: translate(-50%, 100%);
+    opacity: 0;
   }
 
-  .order-confirm-animation {
-    animation: order-implode 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
   }
+}
 
-  .confetti {
-    position: fixed;
-    pointer-events: none;
-    z-index: 9999;
-  }
-
-  @keyframes slideUp {
-    from {
-      transform: translate(-50%, 100%);
-      opacity: 0;
-    }
-
-    to {
-      transform: translate(-50%, 0);
-      opacity: 1;
-    }
-  }
-
-  .animate-slideUp {
-    animation: slideUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-  }
+.animate-slideUp {
+  animation: slideUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
