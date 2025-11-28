@@ -79,7 +79,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                     }
                 }
             },
-
+            onStatusChange: (newStatus: string) => setStatus(newStatus)
         });
 
         clientRef.current.connect();
