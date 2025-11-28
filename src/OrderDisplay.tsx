@@ -120,12 +120,36 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
 
     return (
         <div className="h-screen w-full relative overflow-hidden bg-[#0a0a0a]">
+            {/* CLICK TO START OVERLAY - FORCES USER INTERACTION FOR AUDIO */}
+            {!isRunning && (
+                <div className="absolute inset-0 z-[10000] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center animate-fadeIn">
+                    <div className="text-center space-y-8">
+                        <div className="w-32 h-32 mx-auto mb-6 animate-bounce">
+                            <img src="/logo.png" alt="Quick Logo" className="w-full h-full object-contain drop-shadow-[0_0_30px_rgba(226,0,26,0.6)]" />
+                        </div>
+                        <h1 className="text-6xl font-bold text-white tracking-wider mb-4 font-['Oswald']">DRIVE-THRU</h1>
+                        <p className="text-xl text-white/60 mb-8 max-w-md mx-auto">Cliquez pour activer le microphone et démarrer la commande vocale</p>
+
+                        <button
+                            onClick={handleToggleBot}
+                            className="group relative px-12 py-6 bg-[#E2001A] hover:bg-[#ff001e] text-white rounded-2xl font-bold text-2xl transition-all hover:scale-105 shadow-[0_0_40px_rgba(226,0,26,0.4)] hover:shadow-[0_0_60px_rgba(226,0,26,0.6)] flex items-center gap-4 overflow-hidden"
+                        >
+                            <span className="relative z-10 flex items-center gap-3">
+                                <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                DÉMARRER
+                            </span>
+                            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Ambient Aura Background */}
             <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] aura-gradient bg-[var(--quick-red)] rounded-full mix-blend-screen animate-pulse"></div>
             <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] aura-gradient bg-blue-600 rounded-full mix-blend-screen animate-pulse delay-1000"></div>
 
-            {/* HEADER - ABSOLUTE POSITIONING (NUCLEAR OPTION) */}
-            <div className="absolute top-6 left-6 right-6 h-20 z-50 glass-panel rounded-2xl p-4 flex items-center justify-between">
+            {/* HEADER - FIXED POSITIONING (NUCLEAR OPTION) */}
+            <div className="fixed top-6 left-6 right-6 h-20 z-[9999] glass-panel rounded-2xl p-4 flex items-center justify-between bg-[#141414]/90 backdrop-blur-xl border border-white/10 shadow-2xl">
                 <div className="flex items-center gap-4">
                     <img src="/logo.png" alt="Quick Logo" className="h-12 object-contain drop-shadow-lg" />
                     <div className="h-8 w-[1px] bg-white/20"></div>
@@ -133,9 +157,9 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                 </div>
                 <div className="flex items-center gap-6">
                     {/* Audio Debug Indicator */}
-                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/20 border border-white/5">
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/40 border border-white/10">
                         <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}></div>
-                        <span className="text-xs font-mono text-white/50">MIC: {isRunning ? 'ON' : 'OFF'}</span>
+                        <span className="text-xs font-mono text-white/70 font-bold">MIC: {isRunning ? 'ON' : 'OFF'}</span>
                     </div>
 
                     <div className="flex items-center gap-3">
