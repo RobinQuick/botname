@@ -63,18 +63,18 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
     };
 
     return (
-        <div className="flex h-screen w-full relative overflow-hidden">
+        <div className="h-screen w-full relative overflow-hidden flex flex-col">
             {/* Ambient Aura Background */}
             <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] aura-gradient bg-[var(--quick-red)] rounded-full mix-blend-screen animate-pulse"></div>
             <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] aura-gradient bg-blue-600 rounded-full mix-blend-screen animate-pulse delay-1000"></div>
 
-            {/* Main Content Container - FIXED HEIGHT */}
-            <div className="z-10 flex w-full h-full p-6 gap-6 max-h-screen">
+            {/* Main Content Container - GRID LAYOUT */}
+            <div className="z-10 flex-1 p-6 grid grid-cols-3 gap-6 overflow-hidden">
 
-                {/* LEFT PANEL: ORDER BOARD - FIXED OVERFLOW */}
-                <div className="w-2/3 flex flex-col gap-4 min-h-0">
-                    {/* Header with Logo - STAYS ON TOP */}
-                    <div className="glass-panel rounded-2xl p-4 flex items-center justify-between flex-shrink-0">
+                {/* LEFT PANEL: ORDER BOARD */}
+                <div className="col-span-2 grid grid-rows-[auto_1fr] gap-4 overflow-hidden">
+                    {/* Header with Logo - FIXED ROW */}
+                    <div className="glass-panel rounded-2xl p-4 flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <img src="/logo.png" alt="Quick Logo" className="h-12 object-contain drop-shadow-lg" />
                             <div className="h-8 w-[1px] bg-white/20"></div>
@@ -86,8 +86,8 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                         </div>
                     </div>
 
-                    {/* Order List - SCROLLABLE */}
-                    <div className="glass-panel rounded-2xl flex-1 p-6 flex flex-col relative overflow-hidden min-h-0">
+                    {/* Order List - SCROLLABLE ROW */}
+                    <div className="glass-panel rounded-2xl p-6 flex flex-col overflow-hidden">
                         <div className="flex justify-between items-end mb-6 border-b border-white/10 pb-4 flex-shrink-0">
                             <h2 className="text-3xl font-bold text-white">VOTRE COMMANDE</h2>
                             {testMode && <span className="px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold border border-yellow-500/50">TEST MODE</span>}
@@ -163,8 +163,8 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                 </div>
 
                 {/* RIGHT PANEL: LIVE TRANSCRIPT */}
-                <div className="w-1/3 flex flex-col gap-4">
-                    <div className="glass-panel rounded-2xl flex-1 p-6 flex flex-col relative overflow-hidden">
+                <div className="col-span-1 overflow-hidden">
+                    <div className="glass-panel rounded-2xl h-full p-6 flex flex-col overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-b from-[var(--glass-bg)] to-transparent z-10 pointer-events-none"></div>
 
                         <h2 className="text-xl font-bold text-white/50 mb-4 uppercase tracking-widest text-center">Conversation</h2>
