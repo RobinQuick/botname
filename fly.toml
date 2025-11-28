@@ -1,60 +1,23 @@
-# Fly.io configuration for Quick Voice Bot
-# Optimized for low-latency voice interactions
+# fly.toml app configuration file generated for botname on 2025-11-28T09:11:46Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "quick-voicebot-drive-thru"
-primary_region = "bru" # Brussels - closest to Belgium Quick restaurants
+app = 'botname'
+primary_region = 'cdg'
 
-# Kill signal used to shut down the app
-kill_signal = "SIGINT"
-kill_timeout = "5s"
-
-# Processes to run
-[processes]
-  app = "npm start"
-
-# Environment variables
-[env]
-  NODE_ENV = "production"
-  PORT = "8080"
-
-# Build configuration
 [build]
-  # Use Node.js buildpack
-  [build.args]
-    NODE_VERSION = "22"
 
-# HTTP service configuration
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = false # Keep always running for voice bot
+  auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1
-  
-  # Health check configuration
-  [http_service.concurrency]
-    type = "connections"
-    hard_limit = 100
-    soft_limit = 80
+  min_machines_running = 0
+  processes = ['app']
 
-  # HTTP checks
-  [[http_service.checks]]
-    interval = "10s"
-    timeout = "2s"
-    grace_period = "5s"
-    method = "GET"
-    path = "/health"
-
-# VM configuration - optimized for real-time voice
 [[vm]]
   memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
-
-# Multi-region deployment for redundancy and lower latency
-# Primary: Brussels (Belgium)
-# Fallback: Amsterdam (Netherlands), Paris (France)
-
-# To add more regions after initial deploy:
-# fly scale count 2 --region bru,ams
-# fly scale count 3 --region bru,ams,cdg
+  memory_mb = 1024
