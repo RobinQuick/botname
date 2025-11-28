@@ -119,31 +119,40 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
     };
 
     return (
-        <div className="h-screen w-full relative overflow-hidden flex flex-col">
+    return (
+        <div className="h-screen w-full relative overflow-hidden bg-[#0a0a0a]">
             {/* Ambient Aura Background */}
             <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] aura-gradient bg-[var(--quick-red)] rounded-full mix-blend-screen animate-pulse"></div>
             <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] aura-gradient bg-blue-600 rounded-full mix-blend-screen animate-pulse delay-1000"></div>
 
-            {/* Main Content Container - GRID LAYOUT */}
-            <div className="z-10 flex-1 p-6 grid grid-cols-3 gap-6 overflow-hidden">
-
-                {/* LEFT PANEL: ORDER BOARD */}
-                <div className="col-span-2 grid grid-rows-[auto_1fr] gap-4 overflow-hidden h-full min-h-0">
-                    {/* Header with Logo - FIXED ROW */}
-                    <div className="glass-panel rounded-2xl p-4 flex items-center justify-between shrink-0 z-20">
-                        <div className="flex items-center gap-4">
-                            <img src="/logo.png" alt="Quick Logo" className="h-12 object-contain drop-shadow-lg" />
-                            <div className="h-8 w-[1px] bg-white/20"></div>
-                            <h1 className="text-2xl font-bold text-white tracking-wider">DRIVE-THRU</h1>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <div className={`w-3 h-3 rounded-full ${status === 'connected' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500'}`}></div>
-                            <span className="text-sm font-medium text-white/80 uppercase tracking-widest">{status}</span>
-                        </div>
+            {/* HEADER - ABSOLUTE POSITIONING (NUCLEAR OPTION) */}
+            <div className="absolute top-6 left-6 right-6 h-20 z-50 glass-panel rounded-2xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <img src="/logo.png" alt="Quick Logo" className="h-12 object-contain drop-shadow-lg" />
+                    <div className="h-8 w-[1px] bg-white/20"></div>
+                    <h1 className="text-2xl font-bold text-white tracking-wider">DRIVE-THRU</h1>
+                </div>
+                <div className="flex items-center gap-6">
+                    {/* Audio Debug Indicator */}
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/20 border border-white/5">
+                        <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}></div>
+                        <span className="text-xs font-mono text-white/50">MIC: {isRunning ? 'ON' : 'OFF'}</span>
                     </div>
 
-                    {/* Order List - SCROLLABLE ROW */}
-                    <div ref={orderContainerRef} className="glass-panel rounded-2xl p-6 flex flex-col overflow-hidden h-full min-h-0 relative">
+                    <div className="flex items-center gap-3">
+                        <div className={`w-3 h-3 rounded-full ${status === 'connected' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500'}`}></div>
+                        <span className="text-sm font-medium text-white/80 uppercase tracking-widest">{status}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* MAIN CONTENT - ABSOLUTE POSITIONING BELOW HEADER */}
+            <div className="absolute top-32 bottom-6 left-6 right-6 grid grid-cols-3 gap-6 z-10">
+
+                {/* LEFT PANEL: ORDER BOARD */}
+                <div className="col-span-2 flex flex-col overflow-hidden h-full">
+                    {/* Order List */}
+                    <div ref={orderContainerRef} className="glass-panel rounded-2xl p-6 flex flex-col overflow-hidden h-full relative">
                         <div className="flex justify-between items-end mb-6 border-b border-white/10 pb-4 flex-shrink-0">
                             <h2 className="text-3xl font-bold text-white">VOTRE COMMANDE</h2>
                             {testMode && <span className="px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold border border-yellow-500/50">TEST MODE</span>}
@@ -152,8 +161,8 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                         <div className="flex-1 overflow-y-auto pr-2 space-y-3">
                             {!order || order.items.length === 0 ? (
                                 <div className="h-full flex flex-col items-center justify-center text-white/30 space-y-4">
-                                    <div className="w-16 h-16 rounded-full border-2 border-white/10 flex items-center justify-center">
-                                        <span className="text-2xl">🍔</span>
+                                    <div className="w-32 h-32 opacity-20 grayscale hover:grayscale-0 transition-all duration-500">
+                                        <img src="/logo.png" alt="Quick Logo" className="w-full h-full object-contain" />
                                     </div>
                                     <p className="text-lg font-light">En attente de votre commande...</p>
                                 </div>
@@ -219,8 +228,8 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                 </div>
 
                 {/* RIGHT PANEL: LIVE TRANSCRIPT */}
-                <div className="col-span-1 overflow-hidden">
-                    <div className="glass-panel rounded-2xl h-full p-6 flex flex-col overflow-hidden">
+                <div className="col-span-1 flex flex-col overflow-hidden h-full">
+                    <div className="glass-panel rounded-2xl h-full p-6 flex flex-col overflow-hidden relative">
                         <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-b from-[var(--glass-bg)] to-transparent z-10 pointer-events-none"></div>
 
                         <h2 className="text-xl font-bold text-white/50 mb-4 uppercase tracking-widest text-center">Conversation</h2>
