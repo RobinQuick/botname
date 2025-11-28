@@ -68,13 +68,13 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
             <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] aura-gradient bg-[var(--quick-red)] rounded-full mix-blend-screen animate-pulse"></div>
             <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] aura-gradient bg-blue-600 rounded-full mix-blend-screen animate-pulse delay-1000"></div>
 
-            {/* Main Content Container */}
-            <div className="z-10 flex w-full h-full p-6 gap-6">
+            {/* Main Content Container - FIXED HEIGHT */}
+            <div className="z-10 flex w-full h-full p-6 gap-6 max-h-screen">
 
-                {/* LEFT PANEL: ORDER BOARD */}
-                <div className="w-2/3 flex flex-col gap-4">
-                    {/* Header with Logo */}
-                    <div className="glass-panel rounded-2xl p-4 flex items-center justify-between">
+                {/* LEFT PANEL: ORDER BOARD - FIXED OVERFLOW */}
+                <div className="w-2/3 flex flex-col gap-4 min-h-0">
+                    {/* Header with Logo - STAYS ON TOP */}
+                    <div className="glass-panel rounded-2xl p-4 flex items-center justify-between flex-shrink-0">
                         <div className="flex items-center gap-4">
                             <img src="/logo.png" alt="Quick Logo" className="h-12 object-contain drop-shadow-lg" />
                             <div className="h-8 w-[1px] bg-white/20"></div>
@@ -86,9 +86,9 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                         </div>
                     </div>
 
-                    {/* Order List */}
-                    <div className="glass-panel rounded-2xl flex-1 p-6 flex flex-col relative overflow-hidden">
-                        <div className="flex justify-between items-end mb-6 border-b border-white/10 pb-4">
+                    {/* Order List - SCROLLABLE */}
+                    <div className="glass-panel rounded-2xl flex-1 p-6 flex flex-col relative overflow-hidden min-h-0">
+                        <div className="flex justify-between items-end mb-6 border-b border-white/10 pb-4 flex-shrink-0">
                             <h2 className="text-3xl font-bold text-white">VOTRE COMMANDE</h2>
                             {testMode && <span className="px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold border border-yellow-500/50">TEST MODE</span>}
                         </div>
@@ -103,6 +103,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                                 </div>
                             ) : (
                                 order.items.map((item, index) => (
+                                    /* ANIMATION: Slide in from left */
                                     <div key={index} className="glass-card rounded-xl p-4 flex justify-between items-start group">
                                         <div className="flex gap-4 items-center w-full">
                                             {/* Product Image */}

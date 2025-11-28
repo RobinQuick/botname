@@ -1207,12 +1207,16 @@ export class OrderEngine {
     // ============================================
 
     generateOrderDisplayData(order: Order): any {
+        // Import image mapper
+        const { getProductImage } = require('./product-images.js');
+
         return {
             items: order.items.map(item => ({
                 name: item.name,
                 quantity: item.qty,
                 size: item.size,
-                productId: item.productId,  // Will be used server-side for image lookup
+                productId: item.productId,
+                imageUrl: getProductImage(item.name), // ✅ Add image URL
                 modifiers: item.modifiers.map(m => ({
                     name: m.name,
                     extraPrice: m.extraPrice > 0 ? this.formatPrice(m.extraPrice) : null
