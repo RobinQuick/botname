@@ -504,14 +504,14 @@ function loadConfig(): Config {
     OPENAI_VOICE: process.env.OPENAI_VOICE || 'marin',
     OPENAI_INSTRUCTIONS: process.env.OPENAI_INSTRUCTIONS || DEFAULT_INSTRUCTIONS,
 
-    // VAD - Optimized for audio quality (reduced crackling)
+    // VAD - Optimized for MINIMAL LATENCY (drive-thru speed)
     VAD_THRESHOLD: parseFloat(process.env.VAD_THRESHOLD || '0.5'),
     VAD_PREFIX_PADDING_MS: parseInt(process.env.VAD_PREFIX_PADDING_MS || '300'),
-    VAD_SILENCE_DURATION_MS: parseInt(process.env.VAD_SILENCE_DURATION_MS || '500'),
+    VAD_SILENCE_DURATION_MS: parseInt(process.env.VAD_SILENCE_DURATION_MS || '350'),
 
-    // LLM - Optimized for BREVITY + consistency
-    LLM_TEMPERATURE: parseFloat(process.env.LLM_TEMPERATURE || '0.5'),
-    MAX_RESPONSE_TOKENS: parseInt(process.env.MAX_RESPONSE_TOKENS || '60'),
+    // LLM - Optimized for BREVITY + consistency + SPEED
+    LLM_TEMPERATURE: parseFloat(process.env.LLM_TEMPERATURE || '0.4'),
+    MAX_RESPONSE_TOKENS: parseInt(process.env.MAX_RESPONSE_TOKENS || '50'),
 
     // Thresholds
     ASR_CONFIDENCE_THRESHOLD: parseFloat(process.env.ASR_CONFIDENCE_THRESHOLD || '0.88'),
