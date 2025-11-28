@@ -21,6 +21,8 @@ export class DriveThruClient {
     private audioQueue: Float32Array[] = [];
     private isPlaying: boolean = false;
     private nextStartTime: number = 0;
+    private pingInterval: number | null = null;
+    private minBufferSize: number = 3; // Minimum chunks before playing to reduce crackling
 
     constructor(private config: ClientConfig) { }
 
@@ -37,6 +39,13 @@ export class DriveThruClient {
             this.ws.onopen = () => {
                 this.config.onStatusChange('connected');
                 this.initAudio();
+
+                // Start keepalive ping every 30 seconds to prevent timeout
+                this.pingInterval = window.setInterval(() => {
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({ type: 'ping' }));
+                    }
+                }, 30000);
             };
 
             this.ws.onmessage = async (event) => {
@@ -56,8 +65,13 @@ export class DriveThruClient {
             };
 
             this.ws.onclose = () => {
+                console.log('✅ WebSocket closed');
                 this.config.onStatusChange('disconnected');
                 this.stopAudioCapture();
+                if (this.pingInterval) {
+                    clearInterval(this.pingInterval);
+                    this.pingInterval = null;
+                }
             };
 
             this.ws.onerror = (error) => {
@@ -72,11 +86,16 @@ export class DriveThruClient {
     }
 
     disconnect() {
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
         if (this.ws) {
             this.ws.close();
             this.ws = null;
         }
         this.stopAudioCapture();
+        this.audioQueue = [];
     }
 
     private async initAudio(): Promise<void> {
@@ -176,7 +195,12 @@ export class DriveThruClient {
     }
 
     private async playNextChunk() {
-        if (this.audioQueue.length === 0) {
+        // Build up buffer to reduce crackling
+        if (this.audioQueue.length < this.minBufferSize && !this.isPlaying) {
+            return;
+        }
+
+        if (this.audioQueue.length === 0 || !this.audioContext) {
             this.isPlaying = false;
             return;
         }
