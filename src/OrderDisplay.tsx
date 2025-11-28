@@ -28,7 +28,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
     const [status, setStatus] = useState<string>('disconnected');
     const [order, setOrder] = useState<OrderDisplayData | null>(null);
     const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
-    const [isRunning, setIsRunning] = useState<boolean>(true);
+    const [isRunning, setIsRunning] = useState<boolean>(false); // Start STOPPED to force user gesture
     const clientRef = useRef<DriveThruClient | null>(null);
     const transcriptEndRef = useRef<HTMLDivElement>(null);
     const orderContainerRef = useRef<HTMLDivElement>(null);
@@ -128,9 +128,9 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
             <div className="z-10 flex-1 p-6 grid grid-cols-3 gap-6 overflow-hidden">
 
                 {/* LEFT PANEL: ORDER BOARD */}
-                <div className="col-span-2 grid grid-rows-[auto_1fr] gap-4 overflow-hidden">
+                <div className="col-span-2 grid grid-rows-[auto_1fr] gap-4 overflow-hidden h-full min-h-0">
                     {/* Header with Logo - FIXED ROW */}
-                    <div className="glass-panel rounded-2xl p-4 flex items-center justify-between">
+                    <div className="glass-panel rounded-2xl p-4 flex items-center justify-between shrink-0 z-20">
                         <div className="flex items-center gap-4">
                             <img src="/logo.png" alt="Quick Logo" className="h-12 object-contain drop-shadow-lg" />
                             <div className="h-8 w-[1px] bg-white/20"></div>
@@ -143,7 +143,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                     </div>
 
                     {/* Order List - SCROLLABLE ROW */}
-                    <div ref={orderContainerRef} className="glass-panel rounded-2xl p-6 flex flex-col overflow-hidden">
+                    <div ref={orderContainerRef} className="glass-panel rounded-2xl p-6 flex flex-col overflow-hidden h-full min-h-0 relative">
                         <div className="flex justify-between items-end mb-6 border-b border-white/10 pb-4 flex-shrink-0">
                             <h2 className="text-3xl font-bold text-white">VOTRE COMMANDE</h2>
                             {testMode && <span className="px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold border border-yellow-500/50">TEST MODE</span>}
