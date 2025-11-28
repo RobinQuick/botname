@@ -35,15 +35,33 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
     const transcriptEndRef = useRef<HTMLDivElement>(null);
     const orderContainerRef = useRef<HTMLDivElement>(null);
 
-    // Initial Suggestions (Demo data)
-    useEffect(() => {
-        setSuggestions([
-            { name: 'Sundae Chocolat', image: getProductImage('Sundae Chocolat') },
-            { name: 'Mix M&M\'s', image: getProductImage('Mix M&M\'s') },
-            { name: 'Churros', image: getProductImage('Churros') },
-            { name: 'Fondant', image: getProductImage('Fondant') }
-        ]);
-    }, []);
+    // Suggestions data banks
+    const DRINKS = [
+        { name: 'Coca-Cola', image: getProductImage('Coca-Cola') },
+        { name: 'Sprite', image: getProductImage('Sprite') },
+        { name: 'Fanta', image: getProductImage('Fanta Orange') },
+        { name: 'Ice Tea', image: getProductImage('FuzeTea') }
+    ];
+
+    const DESSERTS = [
+        { name: 'Sundae Chocolat', image: getProductImage('Sundae Chocolat') },
+        { name: 'Mix M&M\'s', image: getProductImage('Mix M&M\'s') },
+        { name: 'Churros', image: getProductImage('Churros') },
+        { name: 'Fondant', image: getProductImage('Fondant') }
+    ];
+
+    const SIDES = [
+        { name: 'Frites', image: getProductImage('Frites') },
+        { name: 'Potatoes', image: getProductImage('Potatoes') },
+        { name: 'Onion Rings', image: getProductImage('Onion Rings') }
+    ];
+
+    const SAUCES = [
+        { name: 'Ketchup', image: getProductImage('Ketchup') },
+        { name: 'Mayonnaise', image: getProductImage('Mayonnaise') },
+        { name: 'BBQ', image: getProductImage('BBQ') },
+        { name: 'Algérienne', image: getProductImage('Algérienne') }
+    ];
 
     useEffect(() => {
         navigator.mediaDevices.getUserMedia({ audio: true })
@@ -69,6 +87,20 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                     if (confirmKeywords.some(keyword => textLower.includes(keyword))) {
                         triggerOrderConfirmation();
                     }
+
+                    // Dynamic contextual suggestions based on bot question
+                    if (textLower.includes('boisson') || textLower.includes('boire')) {
+                        setSuggestions(DRINKS);
+                    } else if (textLower.includes('dessert') || textLower.includes('sucré')) {
+                        setSuggestions(DESSERTS);
+                    } else if (textLower.includes('accompagnement') || textLower.includes('frites') || textLower.includes('côté')) {
+                        setSuggestions(SIDES);
+                    } else if (textLower.includes('sauce')) {
+                        setSuggestions(SAUCES);
+                    }
+                } else if (role === 'user') {
+                    // Clear suggestions when user responds
+                    setSuggestions([]);
                 }
             },
             onStatusChange: (newStatus: string) => setStatus(newStatus)
@@ -171,38 +203,9 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                 </div>
             </div>
 
-            {/* MAIN LAYOUT: 2 COLUMNS (Order Card + Transcript) */}
-            <div className="absolute top-28 bottom-8 left-0 right-0 px-8 grid grid-cols-12 gap-8">
-
-                {/* LEFT: TRANSCRIPT (Subtle) */}
-                <div className="col-span-4 flex flex-col justify-center h-full opacity-80">
-                    <div className="glass-panel rounded-3xl p-6 h-[60vh] flex flex-col relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-16 bg-gradient-to-b from-[var(--glass-bg)] to-transparent z-10"></div>
-                        <div className="flex-1 overflow-y-auto space-y-4 py-4 px-2">
-                            {transcripts.length === 0 ? (
-                                <div className="h-full flex items-center justify-center text-white/20 text-center italic">
-                                    "Je vous écoute..."
-                                </div>
-                            ) : (
-                                transcripts.map((msg, idx) => (
-                                    <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                        <div className={`max-w-[90%] p-4 rounded-2xl text-lg ${msg.role === 'user'
-                                            ? 'bg-white/10 text-white rounded-tr-sm'
-                                            : 'bg-[#E2001A]/20 text-white/90 rounded-tl-sm border border-[#E2001A]/30'
-                                            }`}>
-                                            {msg.text}
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                            <div ref={transcriptEndRef} />
-                        </div>
-                        <div className="absolute bottom-0 left-0 w-full h-16 bg-gradient-to-t from-[var(--glass-bg)] to-transparent z-10"></div>
-                    </div>
-                </div>
-
-                {/* CENTER/RIGHT: WHITE ORDER CARD (The Star) */}
-                <div className="col-span-8 flex justify-center items-center h-full">
+            {/* MAIN LAYOUT: CENTERED ORDER CARD */}
+            <div className="absolute top-28 bottom-8 left-0 right-0 px-4 md:px-8 flex justify-center items-center">
+                <div className="w-full max-w-2xl h-full flex justify-center items-center">
                     <div ref={orderContainerRef} className="white-card w-full max-w-2xl h-[85vh] flex flex-col relative overflow-hidden transform transition-all duration-500">
                         {/* Card Header */}
                         <div className="bg-[#f8f8f8] p-6 border-b border-gray-100 flex justify-between items-center flex-shrink-0">
@@ -259,14 +262,14 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                         {/* SUGGESTIONS AREA (Inside Card) */}
                         {suggestions.length > 0 && (
                             <div className="bg-gray-50 p-4 border-t border-gray-100 flex-shrink-0">
-                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center">Suggestions pour vous</h4>
-                                <div className="flex gap-4 overflow-x-auto pb-2 justify-center">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center">Choisissez</h4>
+                                <div className="flex gap-3 md:gap-4 overflow-x-auto pb-2 justify-start md:justify-center">
                                     {suggestions.map((item, idx) => (
-                                        <div key={idx} className="bg-white rounded-xl p-3 w-28 flex flex-col items-center shadow-sm border border-gray-100 cursor-pointer hover:border-[#E2001A] transition-colors group">
-                                            <div className="w-16 h-16 mb-2">
+                                        <div key={idx} className="bg-white rounded-xl p-2 md:p-3 w-20 md:w-28 flex flex-col items-center shadow-sm border border-gray-100 cursor-pointer hover:border-[#E2001A] active:border-[#E2001A] transition-colors group flex-shrink-0">
+                                            <div className="w-12 h-12 md:w-16 md:h-16 mb-1 md:mb-2">
                                                 <img src={item.image} alt={item.name} className="w-full h-full object-contain group-hover:scale-110 transition-transform" />
                                             </div>
-                                            <span className="text-[10px] font-bold text-center text-gray-800 leading-tight uppercase font-['Oswald']">{item.name}</span>
+                                            <span className="text-[9px] md:text-[10px] font-bold text-center text-gray-800 leading-tight uppercase font-['Oswald']">{item.name}</span>
                                         </div>
                                     ))}
                                 </div>
