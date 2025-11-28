@@ -119,7 +119,6 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
     };
 
     return (
-    return (
         <div className="h-screen w-full relative overflow-hidden bg-[#0a0a0a]">
             {/* Ambient Aura Background */}
             <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] aura-gradient bg-[var(--quick-red)] rounded-full mix-blend-screen animate-pulse"></div>
