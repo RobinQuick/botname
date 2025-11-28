@@ -1,4 +1,4 @@
-app = "quick-voicebot-robin"
+app = "quick-voicebot-robin-lacombr"
 primary_region = "cdg"
 
 [build]

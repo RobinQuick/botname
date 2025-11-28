@@ -59,7 +59,7 @@ const sessions = new Map<string, SessionState>();
 // ============================================
 
 fastify.register(async (fastify) => {
-    fastify.get('/drive-thru', { websocket: true }, (connection, req) => {
+    fastify.get('/drive-thru', { websocket: true }, async (connection, req) => {
         const sessionId = randomUUID();
         const storeId = 'default';
         // @ts-ignore
@@ -109,7 +109,7 @@ fastify.register(async (fastify) => {
         // Send initial state
         sendToClient(session, {
             type: 'order_update',
-            order: orderEngine.generateOrderDisplayData(session.order),
+            order: await orderEngine.generateOrderDisplayData(session.order),
             transcript: { role: 'assistant', text: 'Bienvenue chez Quick, je vous écoute.' }
         });
     });
@@ -279,7 +279,7 @@ function handleClientMessage(session: SessionState, message: any, isBinary: bool
     }
 }
 
-function handleOpenAIEvent(session: SessionState, event: any) {
+async function handleOpenAIEvent(session: SessionState, event: any) {
     switch (event.type) {
         case 'response.audio.delta':
             // Stream audio to client
@@ -313,7 +313,7 @@ function handleOpenAIEvent(session: SessionState, event: any) {
             const output = event.response?.output || [];
             for (const item of output) {
                 if (item.type === 'function_call') {
-                    handleFunctionCall(session, item);
+                    await handleFunctionCall(session, item);
                 }
             }
             break;
@@ -401,7 +401,7 @@ async function handleFunctionCall(session: SessionState, item: any) {
     if (orderUpdated) {
         sendToClient(session, {
             type: 'order_update',
-            order: orderEngine.generateOrderDisplayData(session.order)
+            order: await orderEngine.generateOrderDisplayData(session.order)
         });
     }
 

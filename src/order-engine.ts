@@ -1206,9 +1206,10 @@ export class OrderEngine {
     // DISPLAY HELPERS
     // ============================================
 
-    generateOrderDisplayData(order: Order): any {
+    async generateOrderDisplayData(order: Order): Promise<any> {
         // Import image mapper
-        const { getProductImage } = require('./product-images.js');
+        const productImages = await import('./product-images.js');
+        const { getProductImage } = productImages;
 
         return {
             items: order.items.map(item => ({
