@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DriveThruClient } from './drive-thru-client.js';
 import { createConfettiExplosion } from './confetti.js';
+import { getProductImage } from './product-images.js';
 
 interface OrderItemDisplay {
     name: string;
@@ -29,6 +30,7 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
     const [order, setOrder] = useState<OrderDisplayData | null>(null);
     const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
     const [isRunning, setIsRunning] = useState<boolean>(false); // Start STOPPED to force user gesture
+    const [suggestions, setSuggestions] = useState<{ name: string, image: string }[]>([]);
     const clientRef = useRef<DriveThruClient | null>(null);
     const transcriptEndRef = useRef<HTMLDivElement>(null);
     const orderContainerRef = useRef<HTMLDivElement>(null);
@@ -55,13 +57,33 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
 
                 // Detect order confirmation keywords
                 if (role === 'assistant') {
+                    const textLower = text.toLowerCase();
+
+                    // 1. Confirmation Detection
                     const confirmKeywords = ['prochain guichet', 'confirmé', 'validé', 'merci', 'bonne journée'];
-                    if (confirmKeywords.some(keyword => text.toLowerCase().includes(keyword))) {
+                    if (confirmKeywords.some(keyword => textLower.includes(keyword))) {
                         triggerOrderConfirmation();
+                    }
+
+                    // 2. Dessert Suggestion Detection (SoundHound Style)
+                    const dessertKeywords = ['dessert', 'sucré', 'glace', 'plaisir', 'terminer', 'faim'];
+                    if (dessertKeywords.some(keyword => textLower.includes(keyword))) {
+                        setSuggestions([
+                            { name: 'Sundae Chocolat', image: getProductImage('Sundae Chocolat') },
+                            { name: 'Mix M&M\'s', image: getProductImage('Mix M&M\'s') },
+                            { name: 'Churros', image: getProductImage('Churros') },
+                            { name: 'Fondant', image: getProductImage('Fondant') }
+                        ]);
+                        // Auto-hide after 15s
+                        setTimeout(() => setSuggestions([]), 15000);
                     }
                 }
             },
-            onStatusChange: (newStatus: string) => setStatus(newStatus)
+            onOrderUpdate: (newOrder: any) => {
+                setOrder(newOrder);
+                // Clear suggestions if order updates (user chose something)
+                if (suggestions.length > 0) setSuggestions([]);
+            },
         });
 
         clientRef.current.connect();
@@ -301,6 +323,20 @@ export function DriveThruScreen({ testMode = false }: { testMode?: boolean }) {
                     </div>
                 </div>
             </div>
+
+            {/* VISUAL SUGGESTIONS OVERLAY (SoundHound Style) */}
+            {suggestions.length > 0 && (
+                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[100] flex gap-6 animate-slideUp">
+                    {suggestions.map((item, idx) => (
+                        <div key={idx} className="glass-panel p-4 rounded-2xl flex flex-col items-center gap-3 w-40 hover:scale-105 transition-transform cursor-pointer border-2 border-white/20 shadow-2xl bg-black/60 backdrop-blur-xl">
+                            <div className="w-24 h-24 rounded-full bg-white/10 p-2 overflow-hidden">
+                                <img src={item.image} alt={item.name} className="w-full h-full object-contain drop-shadow-lg" />
+                            </div>
+                            <span className="text-white font-bold text-center text-sm">{item.name}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

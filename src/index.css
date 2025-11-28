@@ -174,14 +174,207 @@ h6 {
     transform: scale(0) rotate(360deg);
     opacity: 0;
   }
-}
 
-.order-confirm-animation {
-  animation: order-implode 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
-}
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
 
-.confetti {
-  position: fixed;
-  pointer-events: none;
-  z-index: 9999;
-}
+  @tailwind base;
+  @tailwind components;
+  @tailwind utilities;
+
+  :root {
+    --quick-red: #E2001A;
+    --quick-red-glow: rgba(226, 0, 26, 0.6);
+    --glass-bg: rgba(20, 20, 20, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-highlight: rgba(255, 255, 255, 0.05);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.7);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: radial-gradient(circle at 50% -20%, #2a0a0d 0%, #0a0a0a 100%);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Aura Glassmorphism Utilities */
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  }
+
+  .glass-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease;
+    animation: slideInFromLeft 0.4s ease-out;
+    cursor: pointer;
+  }
+
+  .glass-card:hover {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border-color: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(226, 0, 26, 0.15);
+  }
+
+  .glass-card:active {
+    transform: translateY(0px) scale(0.98);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 20px var(--quick-red-glow);
+  }
+
+  .aura-gradient {
+    background: radial-gradient(circle at center, var(--quick-red) 0%, transparent 70%);
+    opacity: 0.15;
+    filter: blur(60px);
+    pointer-events: none;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  /* ============================================
+   MODERN ANIMATIONS
+   ============================================ */
+
+  /* Slide in from left for order items */
+  @keyframes slideInFromLeft {
+    from {
+      transform: translateX(-30px);
+      opacity: 0;
+    }
+
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  /* Pulse glow for connected status */
+  @keyframes pulseGlow {
+
+    0%,
+    100% {
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    50% {
+      box-shadow: 0 0 20px currentColor, 0 0 30px currentColor;
+    }
+  }
+
+  /* Fade in animation */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Smooth transitions */
+  * {
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ============================================
+   CONFETTI & ORDER CONFIRMATION ANIMATIONS
+   ============================================ */
+
+  /* Confetti burst from center */
+  @keyframes confetti-burst {
+    0% {
+      transform: translate(0, 0) rotate(0deg);
+      opacity: 1;
+    }
+
+    100% {
+      transform:
+        translate(calc(cos(var(--angle)) * var(--velocity)),
+          calc(sin(var(--angle)) * var(--velocity) + 400px)) rotate(var(--rotation));
+      opacity: 0;
+    }
+  }
+
+  /* Order container implodes into ball then explodes */
+  @keyframes order-implode {
+    0% {
+      transform: scale(1) rotate(0deg);
+      opacity: 1;
+    }
+
+    50% {
+      transform: scale(0.1) rotate(180deg);
+      opacity: 0.8;
+      border-radius: 50%;
+    }
+
+    100% {
+      transform: scale(0) rotate(360deg);
+      opacity: 0;
+    }
+  }
+
+  .order-confirm-animation {
+    animation: order-implode 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  }
+
+  .confetti {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  @keyframes slideUp {
+    from {
+      transform: translate(-50%, 100%);
+      opacity: 0;
+    }
+
+    to {
+      transform: translate(-50%, 0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slideUp {
+    animation: slideUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  }

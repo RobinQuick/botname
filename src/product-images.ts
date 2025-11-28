@@ -36,6 +36,18 @@ export const PRODUCT_IMAGES: Record<string, string> = {
     'Chicken Spicy Pops': '/static/menu/chicken_spicy_pops.png',
     'Cheesy Rolls': '/static/menu/cheesy_rolls.png',
 
+    // Desserts
+    'Sundae': '/static/menu/sundae.png',
+    'Sundae Chocolat': '/static/menu/sundae_chocolat.png',
+    'Sundae Fraise': '/static/menu/sundae_fraise.png',
+    'Sundae Caramel': '/static/menu/sundae_caramel.png',
+    'Mix Mania': '/static/menu/mix_mania.png',
+    'Mix M&M\'s': '/static/menu/mix_mms.png',
+    'Mix Oreo': '/static/menu/mix_oreo.png',
+    'Churros': '/static/menu/churros.png',
+    'Fondant': '/static/menu/fondant.png',
+    'Muffin': '/static/menu/muffin.png',
+
     // Default fallback
     'default': '/static/menu/giant.png'
 };
